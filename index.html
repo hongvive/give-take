@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>기부태익 (期赴泰益) : 경조사에 때맞춰 찾아가(期赴) 큰 보탬을 나눈다(泰益) - 경조사 장부</title>
+  <link rel="icon" type="image/x-icon" href="assets/favicon.ico">
+  <link rel="apple-touch-icon" href="assets/icon.png">
+  
+  <!-- 웹폰트: Noto Serif KR (명조) & Pretendard (고딕) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+  
+  <link rel="stylesheet" href="css/app.css">
+  
+  <!-- 데스크톱 앱 F12 보안 차단 스크립트 (Skill 1, 2) -->
+  <script>
+    (function() {
+      document.addEventListener('contextmenu', function(e) {
+        // 입력 필드나 텍스트 영역 외에는 우클릭 메뉴 차단
+        if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+          e.preventDefault();
+        }
+      }, false);
+
+      document.addEventListener('keydown', function(e) {
+        // F12 개발자도구 방지
+        if (e.keyCode === 123) { e.preventDefault(); return false; }
+        // Ctrl+Shift+I / J / C
+        if (e.ctrlKey && e.shiftKey && (e.keyCode === 73 || e.keyCode === 74 || e.keyCode === 67)) {
+          e.preventDefault(); return false;
+        }
+        // Ctrl+U (소스보기)
+        if (e.ctrlKey && e.keyCode === 85) { e.preventDefault(); return false; }
+      }, false);
+    })();
+  </script>
+</head>
+<body>
+
+  <div class="app-container">
+    
+    <!-- 1. K-Traditional Modern 전통 헤더 -->
+    <header class="app-header">
+      <div class="brand-box">
+        <img src="assets/logo.png" alt="기부태익 로고" style="width: 48px; height: 48px; border-radius: 12px; object-fit: cover; border: 2px solid var(--border-gold); box-shadow: 0 4px 10px rgba(197, 155, 39, 0.25);" />
+        <div>
+          <h1 class="brand-title">
+            기부태익 (期赴泰益)
+            <span class="brand-badge">경조사 원장</span>
+          </h1>
+          <p class="brand-desc">경조사에 때맞춰 찾아가(期赴) 큰 보탬을 나눈다(泰益)</p>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <button type="button" class="btn btn-vermilion" id="btnOpenNewRecord">
+          <span>✍️</span> 새 내역 기록
+        </button>
+        <button type="button" class="btn btn-gold" id="btnLoadSampleData" title="체험용 샘플 데이터를 채웁니다">
+          <span>📜</span> 샘플 불러오기
+        </button>
+      </div>
+    </header>
+
+    <!-- 2. 탭 네비게이션 -->
+    <nav class="nav-tabs">
+      <button type="button" class="nav-tab-btn active" data-tab="tab-dashboard">
+        <span class="tab-icon">📊</span> 수지 종합 현황
+      </button>
+      <button type="button" class="nav-tab-btn" data-tab="tab-ledger">
+        <span class="tab-icon">📖</span> 경조사 장부
+      </button>
+      <button type="button" class="nav-tab-btn" data-tab="tab-contacts">
+        <span class="tab-icon">👥</span> 인맥별 타임라인
+      </button>
+      <button type="button" class="nav-tab-btn" data-tab="tab-calc">
+        <span class="tab-icon">🧮</span> 적정 부조금 계산기
+      </button>
+      <button type="button" class="nav-tab-btn" data-tab="tab-settings">
+        <span class="tab-icon">⚙️</span> 데이터 보관·동기화
+      </button>
+    </nav>
+
+    <!-- ====================================================================
+         탭 1: 종합 수지 현황 (대시보드)
+         ==================================================================== -->
+    <section id="tab-dashboard" class="tab-panel active">
+      <!-- 4대 요약 지표 카드 -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-card-header">
+            <span class="stat-card-title">내가 보낸 총액 (Give)</span>
+            <span class="stat-seal seal-vermilion">出 結</span>
+          </div>
+          <div class="stat-card-value val-vermilion" id="dashTotalGive">0원</div>
+          <div class="stat-card-sub">
+            <span>총 보낸 횟수</span>
+            <strong id="dashCountGive">0회</strong>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-card-header">
+            <span class="stat-card-title">내가 받은 총액 (Take)</span>
+            <span class="stat-seal seal-jade">入 納</span>
+          </div>
+          <div class="stat-card-value val-jade" id="dashTotalTake">0원</div>
+          <div class="stat-card-sub">
+            <span>총 받은 횟수</span>
+            <strong id="dashCountTake">0회</strong>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-card-header">
+            <span class="stat-card-title">순수지 차액 (Balance)</span>
+            <span class="stat-seal seal-gold">均 衡</span>
+          </div>
+          <div class="stat-card-value" id="dashTotalBalance">0원</div>
+          <div class="stat-card-sub">
+            <span id="dashBalanceSubLabel">수지 균형 상태</span>
+            <strong id="dashBalanceRate">0%</strong>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-card-header">
+            <span class="stat-card-title">관리 인맥 및 장부</span>
+            <span class="stat-seal seal-gold">人 脈</span>
+          </div>
+          <div class="stat-card-value" style="color: var(--color-navy);" id="dashContactCount">0명</div>
+          <div class="stat-card-sub">
+            <span>총 기록 거래 건수</span>
+            <strong id="dashTotalRecordCount">0건</strong>
+          </div>
+        </div>
+      </div>
+
+      <!-- 기브앤테이크 수지 밸런스 미터 -->
+      <div class="balance-meter-container">
+        <div class="balance-meter-title-row">
+          <h3 class="meter-title">⚖️ 기브앤테이크 수지 밸런스</h3>
+          <div class="meter-legend">
+            <span class="legend-give">● 보냄(Give) <span id="meterGivePct">50%</span></span>
+            <span class="legend-take">● 받음(Take) <span id="meterTakePct">50%</span></span>
+          </div>
+        </div>
+        <div class="balance-bar-wrap">
+          <div class="bar-segment-give" id="meterGiveBar" style="width: 50%;">보냄</div>
+          <div class="bar-segment-take" id="meterTakeBar" style="width: 50%;">받음</div>
+        </div>
+      </div>
+
+      <!-- 2컬럼 레이아웃: 대분류별 통계 & 인간관계 손익 랭킹 -->
+      <div class="dashboard-grid-2col">
+        <!-- 카테고리별 수수 현황 -->
+        <div class="k-card">
+          <div class="k-card-header">
+            <h3 class="k-card-title">🌸 행사 분류별 수수 현황</h3>
+            <span class="brand-badge">축의·조의·기타</span>
+          </div>
+          
+          <div style="display: flex; flex-direction: column; gap: 16px;">
+            <div>
+              <div style="display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; margin-bottom: 6px;">
+                <span>🌸 축의 (결혼, 돌잔치, 개업 등)</span>
+                <span id="catCongratAmount">보냄 0원 / 받음 0원</span>
+              </div>
+              <div style="height: 10px; background: #EEE; border-radius: 5px; overflow: hidden; display: flex;">
+                <div id="catCongratBarGive" style="background: var(--color-vermilion); width: 0%;"></div>
+                <div id="catCongratBarTake" style="background: var(--color-jade); width: 0%;"></div>
+              </div>
+            </div>
+
+            <div>
+              <div style="display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; margin-bottom: 6px;">
+                <span>🕊️ 조의 (장례, 부고 등)</span>
+                <span id="catCondolenceAmount">보냄 0원 / 받음 0원</span>
+              </div>
+              <div style="height: 10px; background: #EEE; border-radius: 5px; overflow: hidden; display: flex;">
+                <div id="catCondolenceBarGive" style="background: var(--color-vermilion); width: 0%;"></div>
+                <div id="catCondolenceBarTake" style="background: var(--color-jade); width: 0%;"></div>
+              </div>
+            </div>
+
+            <div>
+              <div style="display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; margin-bottom: 6px;">
+                <span>🎁 기타 (명절, 병문안 등)</span>
+                <span id="catEtcAmount">보냄 0원 / 받음 0원</span>
+              </div>
+              <div style="height: 10px; background: #EEE; border-radius: 5px; overflow: hidden; display: flex;">
+                <div id="catEtcBarGive" style="background: var(--color-vermilion); width: 0%;"></div>
+                <div id="catEtcBarTake" style="background: var(--color-jade); width: 0%;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 인간관계 손익 랭킹 (내가 많이 준 사람 vs 내게 많이 준 사람) -->
+        <div class="k-card">
+          <div class="k-card-header">
+            <h3 class="k-card-title">📈 인간관계 수지 랭킹 Top 5</h3>
+            <div style="display: flex; gap: 6px;">
+              <button type="button" class="btn btn-outline" id="btnRankCreditor" style="padding: 4px 10px; font-size: 11px;">내가 많이 준 분</button>
+              <button type="button" class="btn btn-outline" id="btnRankDebtor" style="padding: 4px 10px; font-size: 11px;">내게 많이 준 분</button>
+            </div>
+          </div>
+
+          <div id="rankingContainer" class="ranking-list">
+            <!-- JS로 동적 렌더링 -->
+          </div>
+        </div>
+      </div>
+
+      <!-- 최근 기록 5건 퀵 리스트 -->
+      <div class="k-card">
+        <div class="k-card-header">
+          <h3 class="k-card-title">⏱️ 최근 등록된 경조사 내역</h3>
+          <button type="button" class="btn btn-outline" onclick="switchTab('tab-ledger')" style="padding: 4px 12px; font-size: 12px;">전체 장부 보기 →</button>
+        </div>
+        <div id="dashRecentRecords" style="display: flex; flex-direction: column; gap: 8px;">
+          <!-- JS 렌더링 -->
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================================
+         탭 2: 경조사 장부 (상세 목록 & 검색 & CSV)
+         ==================================================================== -->
+    <section id="tab-ledger" class="tab-panel">
+      <!-- 필터 및 검색 툴바 -->
+      <div class="table-toolbar">
+        <div class="filter-group">
+          <input type="text" id="filterSearch" class="search-input" placeholder="이름, 연락처, 행사명 검색..." />
+          
+          <select id="filterType" class="select-filter">
+            <option value="all">전체 수수 (보냄+받음)</option>
+            <option value="give">보냄 (Give)</option>
+            <option value="take">받음 (Take)</option>
+          </select>
+
+          <select id="filterCategory" class="select-filter">
+            <option value="all">전체 대분류</option>
+            <option value="축의">🌸 축의</option>
+            <option value="조의">🕊️ 조의</option>
+            <option value="기타">🎁 기타</option>
+          </select>
+
+          <select id="filterGroup" class="select-filter">
+            <option value="all">전체 그룹</option>
+            <option value="직장">직장</option>
+            <option value="친구">친구/동창</option>
+            <option value="친척">가족/친척</option>
+            <option value="동호회">동호회</option>
+            <option value="부모님지인">부모님 지인</option>
+            <option value="기타">기타</option>
+          </select>
+        </div>
+
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button type="button" class="btn btn-outline" id="btnDownloadLedgerTemplate" title="장부 엑셀 등록 샘플 양식을 내려받습니다">
+            <span>📥</span> 양식 다운로드
+          </button>
+          <button type="button" class="btn btn-primary" id="btnUploadLedgerCSV" title="엑셀(CSV) 파일로 장부 내역을 대량 등록합니다">
+            <span>📤</span> 엑셀 대량 업로드
+          </button>
+          <input type="file" id="csvLedgerInput" accept=".csv" style="display: none;" />
+          <button type="button" class="btn btn-outline" id="btnExportCSV" title="현재 장부 데이터를 엑셀(CSV)로 저장합니다">
+            <span>💾</span> 엑셀 저장
+          </button>
+          <button type="button" class="btn btn-vermilion" id="btnRecordAddInTab">
+            <span>✍️</span> 새 내역 추가
+          </button>
+        </div>
+      </div>
+
+      <!-- 장부 테이블 -->
+      <div class="custom-table-container">
+        <table class="custom-table">
+          <thead>
+            <tr>
+              <th>일자</th>
+              <th>구분</th>
+              <th>성명</th>
+              <th>연락처</th>
+              <th>그룹</th>
+              <th>행사명</th>
+              <th>분류</th>
+              <th>금액</th>
+              <th>참석여부</th>
+              <th>답례/감사</th>
+              <th style="text-align: right;">관리</th>
+            </tr>
+          </thead>
+          <tbody id="ledgerTableBody">
+            <!-- 동적 렌더링 -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- 하단 합계 요약 바 -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px; padding: 14px 20px; background: var(--bg-card); border: 1px solid var(--border-stone); border-radius: 14px; font-size: 13px;">
+        <div>조회 결과: <strong id="filterResultCount">0</strong>건</div>
+        <div style="display: flex; gap: 24px;">
+          <span>보낸 합계: <strong class="val-vermilion" id="filterGiveSum">0원</strong></span>
+          <span>받은 합계: <strong class="val-jade" id="filterTakeSum">0원</strong></span>
+          <span>수지 차액: <strong id="filterBalanceSum">0원</strong></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================================
+         탭 3: 인맥별 타임라인 원장
+         ==================================================================== -->
+    <section id="tab-contacts" class="tab-panel">
+      <div class="table-toolbar">
+        <div class="filter-group">
+          <input type="text" id="contactSearch" class="search-input" placeholder="지인 성명, 연락처, 메모 검색..." />
+          <select id="contactGroupFilter" class="select-filter">
+            <option value="all">전체 그룹</option>
+            <option value="직장">직장</option>
+            <option value="친구">친구/동창</option>
+            <option value="친척">가족/친척</option>
+            <option value="동호회">동호회</option>
+            <option value="부모님지인">부모님 지인</option>
+            <option value="기타">기타</option>
+          </select>
+        </div>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button type="button" class="btn btn-outline" id="btnDownloadContactTemplate" title="인맥 등록용 샘플 엑셀 양식을 내려받습니다">
+            <span>📥</span> 양식 다운로드
+          </button>
+          <button type="button" class="btn btn-primary" id="btnUploadContactCSV" title="엑셀(CSV) 파일로 지인 명단을 대량 등록합니다">
+            <span>📤</span> 인맥 대량 업로드
+          </button>
+          <input type="file" id="csvContactInput" accept=".csv" style="display: none;" />
+        </div>
+      </div>
+
+      <!-- 인물 카드 그리드 -->
+      <div id="contactGrid" class="contact-grid">
+        <!-- 동적 렌더링 -->
+      </div>
+    </section>
+
+    <!-- ====================================================================
+         탭 4: 적정 축의금 눈치 계산기
+         ==================================================================== -->
+    <section id="tab-calc" class="tab-panel">
+      <div class="calc-container">
+        <!-- 좌측: 입력 파라미터 -->
+        <div class="k-card">
+          <div class="k-card-header">
+            <h3 class="k-card-title">🧮 경조사 눈치 계산 파라미터</h3>
+            <span class="brand-badge">2026년 물가 반영</span>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">1. 상대방과의 친밀도 & 관계</label>
+            <select id="calcRelation" class="form-select">
+              <option value="best_friend">아주 친한 친구 / 베프 / 의형제 (매우 돈독)</option>
+              <option value="friend">일반 친구 / 대학 동기 / 전 직장 친했던 동료</option>
+              <option value="work_close">현 직장 같은 팀 팀원 / 사수 (자주 마주침)</option>
+              <option value="work_normal">현 직장 다른 부서 동료 / 가끔 업무 소통</option>
+              <option value="relative_close">가까운 친척 (사촌, 이모, 삼촌 등)</option>
+              <option value="relative_far">먼 친척 (육촌 이상, 집안 어르신)</option>
+              <option value="acquaintance">청첩장만 온 지인 / 몇 년 만에 연락 온 동창</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">2. 행사 참석 여부 및 식사</label>
+            <select id="calcAttendance" class="form-select">
+              <option value="attend_eat">직접 참석하여 뷔페/식사 함 (기본)</option>
+              <option value="attend_family">가족/연인 동반 참석 (2인 이상 식사)</option>
+              <option value="attend_no_eat">직접 참석은 하나 식사는 안 함 (봉투만 전달)</option>
+              <option value="no_attend">불참하고 계좌이체/봉투만 전달</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">3. 예식장 / 행사장 수준</label>
+            <select id="calcVenue" class="form-select">
+              <option value="normal">일반 웨딩홀 / 컨벤션 (평균 식대 6~7만원선)</option>
+              <option value="hotel">특급 호텔 웨딩 (식대 10~15만원 이상)</option>
+              <option value="house">야외 / 하우스 / 스몰 웨딩</option>
+              <option value="church">종교시설 (성당, 교회, 회관)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">4. 상대방이 과거 내 경조사 때 줬던 금액 (선택)</label>
+            <input type="number" id="calcPastGiven" class="form-input" placeholder="예: 100000 (받은 적 없으면 0원)" step="10000" min="0" value="0" />
+            <small style="font-size: 11px; color: var(--color-secondary); margin-top: 4px; display: block;">
+              * 상대방에게 받은 금액이 있다면 이를 1순위 기준으로 품앗이 정산합니다.
+            </small>
+          </div>
+
+          <button type="button" class="btn btn-vermilion" id="btnRunCalc" style="width: 100%; padding: 13px; font-size: 15px; margin-top: 10px;">
+            <span>💡</span> 최적의 축의금 계산하기
+          </button>
+        </div>
+
+        <!-- 우측: 계산 결과 및 심층 조언 -->
+        <div class="calc-result-box">
+          <div class="calc-result-stamp">推薦</div>
+          <span style="font-family: var(--font-serif); font-size: 14px; font-weight: 700; color: var(--color-amber);">
+            한국인 사회생활 적정 부조금
+          </span>
+          <div class="calc-rec-amount" id="calcResultAmount">100,000원</div>
+          <div style="font-size: 13px; color: var(--color-secondary); font-weight: 600;" id="calcSummaryBadge">
+            (참석 식사 + 일반 웨딩홀 기준)
+          </div>
+
+          <div class="calc-advice-list" id="calcAdviceBox">
+            <p><strong>💡 눈치 공식 산출 근거:</strong></p>
+            <ul style="padding-left: 18px; margin-top: 6px;" id="calcAdviceList">
+              <li>최근 식대 물가 상승(6~7만원)으로 불참 시 5만원, 참석 시 10만원이 표준선입니다.</li>
+              <li>상대방과의 친밀도와 식사 여부를 종합적으로 감안하여 최적의 금액을 책정했습니다.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================================
+         탭 5: 데이터 보관 및 무서버 동기화 (설정)
+         ==================================================================== -->
+    <section id="tab-settings" class="tab-panel">
+      <div class="settings-grid">
+        <!-- 1. 무서버 QR 코드 기기 간 동기화 -->
+        <div class="settings-card">
+          <div>
+            <h4><span>📱</span> QR 코드 무서버 기기 동기화</h4>
+            <p class="settings-desc">
+              중앙 서버 없이 <strong>PC ↔ 스마트폰</strong> 간에 장부 데이터를 직접 전송합니다.
+              PC 화면에 생성된 고밀도 QR 코드를 모바일 카메라로 스캔하면 1초 만에 전체 장부가 안전하게 복제됩니다.
+            </p>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button type="button" class="btn btn-vermilion" id="btnShowSyncQR">
+              <span>🔲</span> 기기 전송 QR 생성
+            </button>
+            <button type="button" class="btn btn-outline" id="btnScanSyncQR">
+              <span>📷</span> QR 데이터 불러오기
+            </button>
+          </div>
+        </div>
+
+        <!-- 2. JSON 백업 및 복원 -->
+        <div class="settings-card">
+          <div>
+            <h4><span>💾</span> 안심 파일 백업 & 복원</h4>
+            <p class="settings-desc">
+              언제든 내 장부 전체를 암호화 호환 JSON 파일로 내려받아 카카오톡이나 구글 드라이브에 보관할 수 있습니다.
+              새 PC나 새 폰으로 바꿀 때 파일 1개만 불러오면 즉시 복원됩니다.
+            </p>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button type="button" class="btn btn-primary" id="btnExportJSON">
+              <span>📥</span> 전체 백업 (.json)
+            </button>
+            <button type="button" class="btn btn-outline" id="btnImportJSON">
+              <span>📤</span> 백업 파일 복원
+            </button>
+            <input type="file" id="jsonFileInput" accept=".json" style="display: none;" />
+          </div>
+        </div>
+
+        <!-- 3. 동일 와이파이(LAN) 직통 접속 안내 -->
+        <div class="settings-card">
+          <div>
+            <h4><span>📶</span> 로컬 WiFi 직통 접속 (포터블 특권)</h4>
+            <p class="settings-desc">
+              본 프로그램은 내 컴퓨터 자체를 초경량 로컬 웹서버로 구동합니다.
+              집이나 사무실 같은 와이파이에 연결되어 있다면 스마트폰으로 PC 주소에 직접 접속하여 사용할 수 있습니다.
+            </p>
+            <div style="background: #F3EFE6; padding: 8px 12px; border-radius: 8px; font-family: monospace; font-size: 12px; margin-bottom: 12px;" id="localIpGuide">
+              접속 주소: http://127.0.0.1:포트/
+            </div>
+          </div>
+          <button type="button" class="btn btn-outline" id="btnCopyLocalUrl">
+            <span>📋</span> 로컬 접속 주소 복사
+          </button>
+        </div>
+
+        <!-- 4. 군사급 안심 완전 삭제 (Wipe) -->
+        <div class="settings-card" style="border-color: rgba(209, 73, 59, 0.4);">
+          <div>
+            <h4 style="color: var(--color-vermilion);"><span>⚠️</span> 데이터 영구 완전 삭제 (Wipe)</h4>
+            <p class="settings-desc">
+              PC를 타인에게 양도하거나 장부를 폐기할 때, 모든 장부 데이터를 난수 덮어쓰기(Shredding) 후
+              로컬 저장소 및 캐시를 흔적 없이 완전 영구 파괴 초기화합니다. (복구 불가)
+            </p>
+          </div>
+          <button type="button" class="btn btn-outline" id="btnWipeData" style="color: var(--color-vermilion); border-color: var(--color-vermilion);">
+            <span>🗑️</span> 모든 장부 완전 삭제
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 하단 푸터 및 이스터에그 (Skill 2) -->
+    <footer class="app-footer">
+      <div>© 2026 기부태익 (期赴泰益) - 경조사 수지 장부 | 로컬 퍼스트 무서버 아키텍처</div>
+      <div>
+        <span id="secretEasterEgg" class="footer-easter-egg" title="System Quick Auth">💮</span>
+        <span style="margin-left: 6px; font-family: var(--font-serif); font-size: 11px;">K-Traditional Modern</span>
+      </div>
+    </footer>
+
+  </div>
+
+  <!-- ====================================================================
+       모달 1: 경조사 거래 신규 등록 / 수정 모달
+       ==================================================================== -->
+  <div id="recordModal" class="app-modal-overlay">
+    <div class="app-modal-dialog record-modal-dialog">
+      <div class="app-modal-header">
+        <span class="app-modal-stamp" id="modalStamp">記 錄</span>
+        <div class="app-modal-title-box">
+          <span class="app-modal-icon">✍️</span>
+          <h3 class="app-modal-title" id="recordModalTitle">경조사 내역 등록</h3>
+        </div>
+      </div>
+
+      <form id="recordForm">
+        <input type="hidden" id="recordId" value="" />
+
+        <!-- 1. 보냄 / 받음 선택 토글 -->
+        <div class="type-toggle-group">
+          <button type="button" class="type-toggle-btn active-give" id="btnTypeGive">
+            <span>🔴</span> 내가 보낸 돈 (Give)
+          </button>
+          <button type="button" class="type-toggle-btn" id="btnTypeTake">
+            <span>🟢</span> 내가 받은 돈 (Take)
+          </button>
+        </div>
+        <input type="hidden" id="formType" value="give" />
+
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label class="form-label">일자 *</label>
+            <input type="date" id="formDate" class="form-input" required />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">행사 대분류 *</label>
+            <select id="formCategory" class="form-select" required>
+              <option value="축의">🌸 축의</option>
+              <option value="조의">🕊️ 조의</option>
+              <option value="기타">🎁 기타</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label class="form-label">상대방 성명 *</label>
+            <input type="text" id="formName" class="form-input" placeholder="예: 김철수" required />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">연락처 (고유 식별키) *</label>
+            <input type="tel" id="formPhone" class="form-input" placeholder="010-0000-0000" required />
+          </div>
+        </div>
+
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label class="form-label">소속 그룹</label>
+            <select id="formGroup" class="form-select">
+              <option value="직장">직장</option>
+              <option value="친구">친구/동창</option>
+              <option value="친척">가족/친척</option>
+              <option value="동호회">동호회</option>
+              <option value="부모님지인">부모님 지인</option>
+              <option value="기타">기타</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">구체적 행사명 *</label>
+            <input type="text" id="formEventName" class="form-input" placeholder="예: 본인 결혼식, 부친상, 돌잔치" required />
+          </div>
+        </div>
+
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label class="form-label">금액 (원) *</label>
+            <input type="number" id="formAmount" class="form-input" placeholder="100000" step="10000" min="0" required />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">참석 여부</label>
+            <select id="formAttendance" class="form-select">
+              <option value="참석(식사)">참석 (식사)</option>
+              <option value="참석(미식사)">참석 (미식사)</option>
+              <option value="불참(봉투전달)">불참 (송금/봉투전달)</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 20px; margin-bottom: 16px; padding: 10px 14px; background: #FAF7F0; border-radius: 10px;">
+          <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;">
+            <input type="checkbox" id="formIsPumasi" />
+            <span>부모님 품앗이 (대리 수수)</span>
+          </label>
+          <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;">
+            <input type="checkbox" id="formIsThanked" />
+            <span>답례품 / 감사 연락 완료</span>
+          </label>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">메모 및 비고 (식장 위치, 관계 메모 등)</label>
+          <input type="text" id="formMemo" class="form-input" placeholder="예: 호텔 식대 8만원 상당, 화환 보냄" />
+        </div>
+
+        <div class="app-modal-footer">
+          <button type="button" class="btn-modal-cancel" id="btnCancelRecordModal">취 소</button>
+          <button type="submit" class="btn-modal-primary" id="btnSaveRecord">저 장</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       모달 2: 인맥 타임라인 상세 모달
+       ==================================================================== -->
+  <div id="contactTimelineModal" class="app-modal-overlay">
+    <div class="app-modal-dialog" style="max-width: 580px;">
+      <div class="app-modal-header">
+        <span class="app-modal-stamp">印 鑑</span>
+        <div class="app-modal-title-box">
+          <span class="app-modal-icon">👤</span>
+          <h3 class="app-modal-title" id="timelineModalName">지인 상세</h3>
+        </div>
+        <button type="button" id="btnCloseTimeline" style="background:none; border:none; font-size:18px; cursor:pointer;">✕</button>
+      </div>
+
+      <div id="timelineModalSummary" style="background: #FAF7F0; border-radius: 12px; padding: 14px; display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 14px;">
+        <!-- 동적 렌더링 -->
+      </div>
+
+      <h4 style="font-family: var(--font-serif); font-size: 14px; color: var(--color-navy); margin-bottom: 8px;">
+        📜 주고받은 역사 (시간순 타임라인)
+      </h4>
+      <div id="timelineContainer" class="timeline-wrap" style="max-height: 380px; overflow-y: auto; padding-right: 10px;">
+        <!-- 동적 렌더링 -->
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       모달 3: QR 코드 무서버 기기 전송/수신 모달
+       ==================================================================== -->
+  <div id="qrModal" class="app-modal-overlay">
+    <div class="app-modal-dialog" style="max-width: 480px; text-align: center;">
+      <div class="app-modal-header">
+        <span class="app-modal-stamp">信 號</span>
+        <div class="app-modal-title-box">
+          <span class="app-modal-icon">📱</span>
+          <h3 class="app-modal-title" id="qrModalTitle">기기 동기화 QR</h3>
+        </div>
+        <button type="button" id="btnCloseQRModal" style="background:none; border:none; font-size:18px; cursor:pointer;">✕</button>
+      </div>
+
+      <div class="qr-modal-body">
+        <p style="font-size: 13px; color: var(--color-secondary);" id="qrModalInstruction">
+          스마트폰 카메라로 아래 QR 코드를 비추면 장부가 1초 만에 복제됩니다.
+        </p>
+
+        <div id="qrCodeContainer" class="qr-code-box">
+          <!-- QR SVG 렌더링 -->
+        </div>
+
+        <!-- QR 분할 페이징 컨트롤 (대량 내역 대비) -->
+        <div id="qrPaginationControls" style="display: none; justify-content: center; align-items: center; gap: 12px; margin: 8px 0 12px 0;">
+          <button type="button" class="btn btn-outline" id="btnQrPrevPage" style="padding: 5px 12px; font-size: 12px;">◀ 이전 장</button>
+          <span id="qrPageIndicator" style="font-size: 13px; font-weight: 700; color: var(--color-navy); font-family: var(--font-serif);">1 / 1</span>
+          <button type="button" class="btn btn-outline" id="btnQrNextPage" style="padding: 5px 12px; font-size: 12px;">다음 장 ▶</button>
+        </div>
+
+        <div style="font-size: 11px; color: var(--color-secondary); margin-top: 6px;">
+          중앙 서버를 거치지 않는 순수 P2P 로컬 데이터 암호화 전송
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 스크립트 번들 로드 -->
+  <script src="js/confetti.js"></script>
+  <script src="js/modal.js"></script>
+  <script src="js/qrcode.min.js"></script>
+  <script src="js/app.js"></script>
+
+</body>
+</html>

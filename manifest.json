@@ -1,0 +1,16 @@
+{
+  "name": "기부태익 (期赴泰益) - 경조사 장부",
+  "short_name": "기부태익",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#F9F6F0",
+  "theme_color": "#1B2A4A",
+  "description": "경조사에 때맞춰 찾아가(期赴) 큰 보탬을 나눈다(泰益) - 기부태익 경조사 원장",
+  "icons": [
+    {
+      "src": "assets/icon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    }
+  ]
+}
