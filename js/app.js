@@ -30,6 +30,7 @@
     loadRecords();
     initEventListeners();
     updateLocalIpGuide();
+    checkUrlHashSync();
 
     if (state.records.length === 0 && state.contacts.length === 0) {
       showToast('새 장부입니다. 상단의 [샘플 불러오기]를 누르면 시연 데이터를 체험할 수 있습니다.');
@@ -1262,62 +1263,130 @@
     reader.readAsText(file);
   }
 
-  // 3. QR 코드 무서버 기기 전송 (20건 단위 분할 페이징으로 용량 초과 원천 방지)
+  // ==========================================================================
+  // 스마트 링크 QR & 공무원 행정망 맞춤 무서버 동기화 로직
+  // ==========================================================================
+
+  function getSyncBaseUrl() {
+    const defaultProdUrl = 'https://give-take.vercel.app/';
+    if (typeof window === 'undefined') return defaultProdUrl;
+    const href = window.location.href;
+    if (href.startsWith('file:') || href.includes('127.0.0.1') || href.includes('localhost')) {
+      return defaultProdUrl;
+    }
+    return window.location.origin + window.location.pathname;
+  }
+
+  function getRecordsByScope(scope) {
+    if (scope === 'all') return state.records;
+
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+
+    if (scope === 'today') {
+      return state.records.filter(r => r.date === todayStr);
+    }
+
+    if (scope === 'week') {
+      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const weekAgoStr = `${weekAgo.getFullYear()}-${pad(weekAgo.getMonth() + 1)}-${pad(weekAgo.getDate())}`;
+      return state.records.filter(r => r.date >= weekAgoStr);
+    }
+
+    if (scope === 'month') {
+      const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      const monthAgoStr = `${monthAgo.getFullYear()}-${pad(monthAgo.getMonth() + 1)}-${pad(monthAgo.getDate())}`;
+      return state.records.filter(r => r.date >= monthAgoStr);
+    }
+
+    return state.records;
+  }
+
+  function getScopeLabel(scope) {
+    switch (scope) {
+      case 'today': return '오늘 작성분';
+      case 'week': return '최근 7일 작성분';
+      case 'month': return '최근 30일 작성분';
+      default: return '전체 장부';
+    }
+  }
+
+  // 1. 스마트 링크 QR 코드 생성 (PC ➡️ 모바일)
   function showSyncQR() {
     if (state.records.length === 0) {
       showToast('동기화할 장부 내역이 없습니다.', 'warn');
       return;
     }
 
-    try {
-      const CHUNK_SIZE = 20;
-      const totalPages = Math.ceil(state.records.length / CHUNK_SIZE);
-      state.qrPages = [];
+    const scopeSelect = document.getElementById('qrScopeSelect');
+    const scope = scopeSelect ? scopeSelect.value : 'week';
+    generateSyncQRPages(scope);
 
-      for (let p = 0; p < totalPages; p++) {
-        const chunk = state.records.slice(p * CHUNK_SIZE, (p + 1) * CHUNK_SIZE);
-        const lines = chunk.map(r => [
-          r.date,
-          r.type === 'give' ? '0' : '1',
-          r.category,
-          (r.name || '').replace(/[\|\n]/g, ' '),
-          (r.phone || '').replace(/[\|\n]/g, ' '),
-          (r.group || '').replace(/[\|\n]/g, ' '),
-          (r.eventName || '').replace(/[\|\n]/g, ' '),
-          r.amount,
-          (r.attendance || '').replace(/[\|\n]/g, ' '),
-          r.isPumasi ? '1' : '0',
-          r.isThanked ? '1' : '0',
-          (r.memo || '').replace(/[\|\n]/g, ' ')
-        ].join('|'));
+    document.getElementById('qrModalTitle').textContent = '스마트 링크 동기화 QR (PC ➡️ 모바일)';
+    document.getElementById('qrModal').classList.add('active');
+  }
 
-        const payload = `GNT3:P${p + 1}/${totalPages}:\n` + lines.join('\n');
-        state.qrPages.push(payload);
-      }
+  function generateSyncQRPages(scope) {
+    let targetRecords = getRecordsByScope(scope);
 
-      state.qrCurrentPageIndex = 0;
-      renderQrPage(0);
-
-      document.getElementById('qrModalTitle').textContent = '기기 동기화 QR (PC ➡️ 모바일)';
-      document.getElementById('qrModalInstruction').textContent = '스마트폰 카메라로 아래 QR 코드를 비추면 장부가 1초 만에 복제됩니다.';
-      document.getElementById('qrModal').classList.add('active');
-    } catch (err) {
-      console.error('QR creation error:', err);
-      AppModal.alert('QR 생성 오류', 'QR 코드 생성 중 오류가 발생했습니다: ' + err.message, 'error');
+    if (targetRecords.length === 0) {
+      showToast(`해당 기간(${getScopeLabel(scope)})에 등록된 내역이 없어 전체 장부로 전환합니다.`, 'info');
+      targetRecords = state.records;
+      const scopeSelect = document.getElementById('qrScopeSelect');
+      if (scopeSelect) scopeSelect.value = 'all';
     }
+
+    const baseUrl = getSyncBaseUrl();
+    const CHUNK_SIZE = 15; // 모바일 카메라가 0.1초 만에 인식할 수 있도록 최적화
+    const totalPages = Math.ceil(targetRecords.length / CHUNK_SIZE);
+    state.qrPages = [];
+
+    for (let p = 0; p < totalPages; p++) {
+      const chunk = targetRecords.slice(p * CHUNK_SIZE, (p + 1) * CHUNK_SIZE);
+      const lines = chunk.map(r => [
+        r.date || '',
+        r.type === 'give' ? '0' : '1',
+        r.category || '축의',
+        (r.name || '').replace(/[\|\n]/g, ' '),
+        (r.phone || '').replace(/[\|\n]/g, ' '),
+        (r.group || '').replace(/[\|\n]/g, ' '),
+        (r.eventName || '').replace(/[\|\n]/g, ' '),
+        r.amount || 0,
+        (r.attendance || '').replace(/[\|\n]/g, ' '),
+        r.isPumasi ? '1' : '0',
+        r.isThanked ? '1' : '0',
+        (r.memo || '').replace(/[\|\n]/g, ' ')
+      ].join('|'));
+
+      const rawData = lines.join('\n');
+      const base64Data = btoa(unescape(encodeURIComponent(rawData)));
+      const smartUrl = `${baseUrl}#sync=${base64Data}`;
+
+      state.qrPages.push({
+        url: smartUrl,
+        raw: rawData,
+        count: chunk.length,
+        page: p + 1,
+        totalPages: totalPages
+      });
+    }
+
+    state.qrCurrentPageIndex = 0;
+    renderQrPage(0);
   }
 
   function renderQrPage(index) {
-    if (index < 0 || index >= state.qrPages.length) return;
+    if (!state.qrPages || index < 0 || index >= state.qrPages.length) return;
     state.qrCurrentPageIndex = index;
 
-    const payload = state.qrPages[index];
+    const pageData = state.qrPages[index];
     const qr = qrcode(0, 'L');
-    qr.addData(payload);
+    qr.addData(pageData.url);
     qr.make();
 
     const qrContainer = document.getElementById('qrCodeContainer');
-    qrContainer.innerHTML = qr.createSvgTag(4, 8);
+    qrContainer.innerHTML = qr.createSvgTag(4, 6);
 
     const paginationEl = document.getElementById('qrPaginationControls');
     const indicatorEl = document.getElementById('qrPageIndicator');
@@ -1326,10 +1395,7 @@
 
     if (state.qrPages.length > 1) {
       paginationEl.style.display = 'flex';
-      const startIdx = index * 20 + 1;
-      const endIdx = Math.min((index + 1) * 20, state.records.length);
-      indicatorEl.textContent = `${index + 1} / ${state.qrPages.length} 장 (${startIdx}~${endIdx}건)`;
-
+      indicatorEl.textContent = `${index + 1} / ${state.qrPages.length} 장 (${pageData.count}건)`;
       if (btnPrev) btnPrev.disabled = index === 0;
       if (btnNext) btnNext.disabled = index === state.qrPages.length - 1;
     } else {
@@ -1337,73 +1403,286 @@
     }
   }
 
-  // 4. QR 데이터 불러오기 모달
-  async function promptScanQR() {
-    const raw = prompt('QR 코드에서 복사된 데이터 텍스트(GNT... 또는 백업 JSON)를 붙여넣으세요:');
-    if (!raw) return;
+  function copySyncLink() {
+    if (!state.qrPages || !state.qrPages[state.qrCurrentPageIndex]) {
+      showToast('동기화할 링크가 없습니다.', 'warn');
+      return;
+    }
+    const url = state.qrPages[state.qrCurrentPageIndex].url;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(() => {
+        showToast('🔗 스마트폰 동기화 웹 링크가 복사되었습니다!');
+      }).catch(() => {
+        prompt('동기화 링크를 복사하세요:', url);
+      });
+    } else {
+      prompt('동기화 링크를 복사하세요:', url);
+    }
+  }
+
+  // 2. 공무원 행정망 모바일 동기화 코드 복사 (모바일 ➡️ PC)
+  function copyMobileSyncText() {
+    if (state.records.length === 0) {
+      showToast('동기화할 장부 내역이 없습니다.', 'warn');
+      return;
+    }
+
+    let target = getRecordsByScope('today');
+    let label = '오늘 작성분';
+    if (target.length === 0) {
+      target = getRecordsByScope('week');
+      label = '최근 7일 작성분';
+    }
+    if (target.length === 0) {
+      target = state.records.slice(0, 20);
+      label = '최신 20건';
+    }
+
+    const lines = target.map(r => [
+      r.date || '',
+      r.type === 'give' ? '0' : '1',
+      r.category || '축의',
+      (r.name || '').replace(/[\|\n]/g, ' '),
+      (r.phone || '').replace(/[\|\n]/g, ' '),
+      (r.group || '').replace(/[\|\n]/g, ' '),
+      (r.eventName || '').replace(/[\|\n]/g, ' '),
+      r.amount || 0,
+      (r.attendance || '').replace(/[\|\n]/g, ' '),
+      r.isPumasi ? '1' : '0',
+      r.isThanked ? '1' : '0',
+      (r.memo || '').replace(/[\|\n]/g, ' ')
+    ].join('|'));
+
+    const syncCode = `GNT3:${label}(${target.length}건):\n` + lines.join('\n');
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(syncCode).then(() => {
+        AppModal.alert(
+          '📋 동기화 코드 복사 완료',
+          `[${label}] 총 ${target.length}건의 동기화 코드가 클립보드에 복사되었습니다!\n\n공직자통합메일(korea.kr) 또는 상용메일 본문에 붙여넣어 본인에게 전송한 후, 행정망 PC에서 [PC에서 코드 붙여넣기]를 실행하세요.`,
+          'success'
+        );
+      }).catch(() => {
+        prompt('동기화 코드를 복사하세요:', syncCode);
+      });
+    } else {
+      prompt('동기화 코드를 복사하세요:', syncCode);
+    }
+  }
+
+  // 3. PC에서 텍스트 코드 붙여넣기 모달 & 적용
+  function openPasteSyncModal() {
+    const modal = document.getElementById('textSyncModal');
+    const textarea = document.getElementById('syncTextarea');
+    if (textarea) textarea.value = '';
+    modal.classList.add('active');
+    setTimeout(() => textarea?.focus(), 150);
+  }
+
+  function closePasteSyncModal() {
+    document.getElementById('textSyncModal')?.classList.remove('active');
+  }
+
+  function parseSyncTextLines(raw) {
+    let recordsToRestore = [];
+    raw = (raw || '').trim();
+
+    // 1. #sync= 뒤의 Base64인 경우
+    if (raw.includes('#sync=')) {
+      try {
+        const b64 = raw.split('#sync=')[1].trim();
+        raw = decodeURIComponent(escape(atob(b64)));
+      } catch (e) {}
+    } else if (!raw.startsWith('GNT') && !raw.startsWith('{') && !raw.startsWith('[')) {
+      try {
+        const decoded = decodeURIComponent(escape(atob(raw)));
+        if (decoded.includes('|')) raw = decoded;
+      } catch (e) {}
+    }
+
+    // 2. GNT3 파이프 구분자 포맷
+    if (raw.includes('|')) {
+      const lines = raw.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line || line.startsWith('GNT3:')) continue;
+        const parts = line.split('|');
+        if (parts.length >= 8) {
+          recordsToRestore.push({
+            id: 'rec_sync_' + Date.now() + '_' + i,
+            date: parts[0],
+            type: parts[1] === '0' ? 'give' : 'take',
+            category: parts[2],
+            name: parts[3],
+            phone: parts[4],
+            group: parts[5],
+            eventName: parts[6],
+            amount: Number(parts[7]) || 0,
+            attendance: parts[8] || '참석(식사)',
+            isPumasi: parts[9] === '1',
+            isThanked: parts[10] === '1',
+            memo: parts[11] || ''
+          });
+        }
+      }
+    } else if (raw.startsWith('GNT:')) {
+      const compact = JSON.parse(raw.substring(4));
+      recordsToRestore = compact.map((c, idx) => ({
+        id: 'rec_sync_' + Date.now() + '_' + idx,
+        type: c.t === 0 ? 'give' : 'take',
+        date: c.d,
+        category: c.c,
+        name: c.n,
+        phone: c.p,
+        group: c.g,
+        eventName: c.e,
+        amount: c.a,
+        attendance: c.at,
+        isPumasi: !!c.pu,
+        isThanked: !!c.th,
+        memo: c.m
+      }));
+    } else if (raw.startsWith('{') || raw.startsWith('[')) {
+      const parsed = JSON.parse(raw);
+      recordsToRestore = Array.isArray(parsed) ? parsed : (parsed.records || []);
+    }
+
+    return recordsToRestore;
+  }
+
+  async function applySyncText() {
+    const textarea = document.getElementById('syncTextarea');
+    const raw = textarea ? textarea.value.trim() : '';
+    if (!raw) {
+      showToast('동기화 코드를 입력해 주세요.', 'warn');
+      return;
+    }
 
     try {
-      let recordsToRestore = [];
+      const records = parseSyncTextLines(raw);
+      if (!records || records.length === 0) {
+        throw new Error('유효한 장부 데이터가 포함되어 있지 않습니다.');
+      }
 
-      if (raw.startsWith('GNT3:')) {
-        const lines = raw.split('\n');
-        for (let i = 1; i < lines.length; i++) {
-          const line = lines[i].trim();
-          if (!line) continue;
-          const parts = line.split('|');
-          if (parts.length >= 8) {
-            recordsToRestore.push({
-              id: 'rec_qr_' + Date.now() + '_' + i,
-              date: parts[0],
-              type: parts[1] === '0' ? 'give' : 'take',
-              category: parts[2],
-              name: parts[3],
-              phone: parts[4],
-              group: parts[5],
-              eventName: parts[6],
-              amount: Number(parts[7]) || 0,
-              attendance: parts[8] || '참석(식사)',
-              isPumasi: parts[9] === '1',
-              isThanked: parts[10] === '1',
-              memo: parts[11] || ''
-            });
-          }
+      let addedCount = 0;
+      records.forEach(newR => {
+        const isDuplicate = state.records.some(r =>
+          r.date === newR.date &&
+          r.name === newR.name &&
+          r.amount === newR.amount &&
+          r.eventName === newR.eventName &&
+          r.type === newR.type
+        );
+        if (!isDuplicate) {
+          state.records.unshift(newR);
+          addedCount++;
         }
-      } else if (raw.startsWith('GNT:')) {
-        const compact = JSON.parse(raw.substring(4));
-        recordsToRestore = compact.map((c, idx) => ({
-          id: 'rec_qr_' + Date.now() + '_' + idx,
-          type: c.t === 0 ? 'give' : 'take',
-          date: c.d,
-          category: c.c,
-          name: c.n,
-          phone: c.p,
-          group: c.g,
-          eventName: c.e,
-          amount: c.a,
-          attendance: c.at,
-          isPumasi: !!c.pu,
-          isThanked: !!c.th,
-          memo: c.m
-        }));
-      } else {
-        const parsed = JSON.parse(raw);
-        recordsToRestore = Array.isArray(parsed) ? parsed : (parsed.records || []);
-      }
+      });
 
-      if (!recordsToRestore || recordsToRestore.length === 0) {
-        throw new Error('유효한 데이터가 포함되어 있지 않습니다.');
-      }
-
-      // 기존 데이터에 병합
-      state.records = [...recordsToRestore, ...state.records];
       saveRecords();
+      refreshAllViews();
+      closePasteSyncModal();
+
       if (typeof window.fireBigCelebration === 'function') {
         window.fireBigCelebration();
       }
-      showToast(`🎉 총 ${recordsToRestore.length}건이 QR 데이터로부터 성공적으로 추가되었습니다!`, 'success');
-    } catch (e) {
-      AppModal.alert('동기화 실패', '올바른 동기화 데이터가 아닙니다: ' + e.message, 'error');
+      showToast(`🎉 총 ${addedCount}건의 새로운 내역이 장부에 반영되었습니다! (중복 ${records.length - addedCount}건 제외)`, 'success');
+    } catch (err) {
+      AppModal.alert('동기화 반영 실패', '동기화 코드를 해석할 수 없습니다: ' + err.message, 'error');
+    }
+  }
+
+  // 4. 최근 작성분만 엑셀 저장 (.xlsx)
+  function exportRecentXLSX() {
+    let target = getRecordsByScope('week');
+    let label = '최근7일';
+    if (target.length === 0) {
+      target = state.records;
+      label = '전체';
+    }
+
+    if (target.length === 0) {
+      showToast('내보낼 장부 내역이 없습니다.', 'warn');
+      return;
+    }
+
+    const exportData = target.map(r => ({
+      '일자': r.date || '',
+      '구분': r.type === 'give' ? '보냄(출)' : '받음(입)',
+      '행사분류': r.category || '',
+      '성명': r.name || '',
+      '연락처': r.phone || '',
+      '소속그룹': r.group || '',
+      '행사명': r.eventName || '',
+      '금액': Number(r.amount) || 0,
+      '참석여부': r.attendance || '',
+      '부모님품앗이': r.isPumasi ? 'Y' : 'N',
+      '답례완료': r.isThanked ? 'Y' : 'N',
+      '비고메모': r.memo || ''
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    worksheet['!cols'] = [
+      { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 15 },
+      { wch: 12 }, { wch: 18 }, { wch: 12 }, { wch: 14 }, { wch: 12 },
+      { wch: 10 }, { wch: 25 }
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, '최근경조사');
+    XLSX.writeFile(workbook, `기부태익_${label}_경조사장부_${getTodayDateString()}.xlsx`);
+    showToast(`📊 ${label} 내역 ${target.length}건이 엑셀(.xlsx)로 저장되었습니다!`);
+  }
+
+  // 5. 모바일 접속 시 URL Hash 동기화 감지 (스마트폰 자동 반영)
+  async function checkUrlHashSync() {
+    const hash = window.location.hash;
+    if (!hash || !hash.includes('sync=')) return;
+
+    try {
+      const rawParam = hash.split('sync=')[1];
+      if (!rawParam) return;
+
+      const records = parseSyncTextLines(rawParam);
+      if (!records || records.length === 0) return;
+
+      setTimeout(async () => {
+        const ok = await AppModal.confirm(
+          '📱 스마트폰 장부 동기화',
+          `PC에서 보낸 ${records.length}건의 장부 데이터가 도착했습니다!\n\n현재 내 스마트폰 장부에 추가하시겠습니까?`,
+          { okText: '장부에 추가', cancelText: '취소', stamp: '同期' }
+        );
+
+        if (ok) {
+          let addedCount = 0;
+          records.forEach(newR => {
+            const isDuplicate = state.records.some(r =>
+              r.date === newR.date &&
+              r.name === newR.name &&
+              r.amount === newR.amount &&
+              r.eventName === newR.eventName &&
+              r.type === newR.type
+            );
+            if (!isDuplicate) {
+              state.records.unshift(newR);
+              addedCount++;
+            }
+          });
+
+          saveRecords();
+          refreshAllViews();
+          if (typeof window.fireBigCelebration === 'function') {
+            window.fireBigCelebration();
+          }
+          showToast(`🎉 총 ${addedCount}건이 스마트폰 장부에 성공적으로 추가되었습니다!`, 'success');
+        }
+
+        if (window.history && window.history.replaceState) {
+          window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        }
+      }, 600);
+    } catch (err) {
+      console.error('URL Hash Sync error:', err);
     }
   }
 
@@ -1592,15 +1871,18 @@
     });
 
     document.getElementById('btnShowSyncQR')?.addEventListener('click', showSyncQR);
-    document.getElementById('btnScanSyncQR')?.addEventListener('click', promptScanQR);
-
-    document.getElementById('btnCopyLocalUrl')?.addEventListener('click', () => {
-      const url = `http://${window.location.hostname || '127.0.0.1'}:${window.location.port || '80'}/`;
-      navigator.clipboard.writeText(url).then(() => {
-        showToast('로컬 접속 주소가 클립보드에 복사되었습니다: ' + url);
-      });
+    document.getElementById('qrScopeSelect')?.addEventListener('change', (e) => {
+      generateSyncQRPages(e.target.value);
     });
+    document.getElementById('btnCopySyncLink')?.addEventListener('click', copySyncLink);
 
+    document.getElementById('btnCopyMobileSyncText')?.addEventListener('click', copyMobileSyncText);
+    document.getElementById('btnOpenPasteSyncModal')?.addEventListener('click', openPasteSyncModal);
+    document.getElementById('btnCloseTextSyncModal')?.addEventListener('click', closePasteSyncModal);
+    document.getElementById('btnCancelTextSync')?.addEventListener('click', closePasteSyncModal);
+    document.getElementById('btnApplySyncText')?.addEventListener('click', applySyncText);
+
+    document.getElementById('btnExportRecentXLSX')?.addEventListener('click', exportRecentXLSX);
     document.getElementById('btnWipeData')?.addEventListener('click', wipeAllData);
 
     // 은밀한 이스터에그 (Skill 2)
