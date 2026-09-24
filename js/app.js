@@ -64,7 +64,6 @@
       const saved = localStorage.getItem(STORAGE_KEY);
       state.records = saved ? JSON.parse(saved) : [];
     } catch (e) {
-      console.error('Failed to load records:', e);
       state.records = [];
     }
 
@@ -72,11 +71,39 @@
       const savedContacts = localStorage.getItem(CONTACTS_STORAGE_KEY);
       state.contacts = savedContacts ? JSON.parse(savedContacts) : [];
     } catch (e) {
-      console.error('Failed to load contacts:', e);
       state.contacts = [];
     }
 
     refreshAllViews();
+
+    // C# 데스크톱 앱 디스크 파일(/data/gnt_ledger_store.json) 영구 저장소 로드 & 복원
+    fetch('/api/load')
+      .then(res => res.json())
+      .then(diskData => {
+        if (diskData && (diskData.records || diskData.contacts)) {
+          let updated = false;
+          if (Array.isArray(diskData.records) && diskData.records.length > 0) {
+            if (state.records.length === 0 || diskData.records.length >= state.records.length) {
+              state.records = diskData.records;
+              updated = true;
+            }
+          }
+          if (Array.isArray(diskData.contacts) && diskData.contacts.length > 0) {
+            if (state.contacts.length === 0 || diskData.contacts.length >= state.contacts.length) {
+              state.contacts = diskData.contacts;
+              updated = true;
+            }
+          }
+          if (updated) {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(state.records));
+            localStorage.setItem(CONTACTS_STORAGE_KEY, JSON.stringify(state.contacts));
+            refreshAllViews();
+          }
+        }
+      })
+      .catch(() => {
+        // 순수 웹(Vercel) 환경에서는 무시됨
+      });
   }
 
   function saveRecords() {
@@ -84,6 +111,19 @@
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state.records));
       localStorage.setItem(CONTACTS_STORAGE_KEY, JSON.stringify(state.contacts));
       refreshAllViews();
+
+      // C# 데스크톱 앱 디스크 파일 영구 저장 호출 (data/gnt_ledger_store.json)
+      fetch('/api/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          records: state.records,
+          contacts: state.contacts,
+          savedAt: new Date().toISOString()
+        })
+      }).catch(() => {
+        // 순수 웹(Vercel) 환경에서는 무시됨
+      });
     } catch (e) {
       console.error('Failed to save records:', e);
       showToast('저장 공간 오류가 발생했습니다.', 'warn');
@@ -1338,7 +1378,7 @@
     }
 
     const baseUrl = getSyncBaseUrl();
-    const CHUNK_SIZE = 15; // 모바일 카메라가 0.1초 만에 인식할 수 있도록 최적화
+    const CHUNK_SIZE = 4; // 카메라가 즉시 인식할 수 있도록 1장당 4건 단위로 굵고 크게 생성
     const totalPages = Math.ceil(targetRecords.length / CHUNK_SIZE);
     state.qrPages = [];
 
@@ -1381,12 +1421,13 @@
     state.qrCurrentPageIndex = index;
 
     const pageData = state.qrPages[index];
-    const qr = qrcode(0, 'L');
+    // 오류 복원 레벨 M(15%) 적용 및 대형 굵은 모듈 생성으로 모니터 모아레/반사광 극복
+    const qr = qrcode(0, 'M');
     qr.addData(pageData.url);
     qr.make();
 
     const qrContainer = document.getElementById('qrCodeContainer');
-    qrContainer.innerHTML = qr.createSvgTag(4, 6);
+    qrContainer.innerHTML = qr.createSvgTag(6, 10);
 
     const paginationEl = document.getElementById('qrPaginationControls');
     const indicatorEl = document.getElementById('qrPageIndicator');
@@ -1714,15 +1755,18 @@
         throw new Error('스캐너 엔진 라이브러리를 불러올 수 없습니다.');
       }
 
-      html5QrCodeScanner = new Html5Qrcode("qrReader");
+      // 모달 CSS 애니메이션 및 뷰파인더 DOM 치수 계산을 위해 250ms 대기
+      await new Promise(r => setTimeout(r, 250));
+
+      html5QrCodeScanner = new Html5Qrcode("qrReader", {
+        experimentalFeatures: {
+          useBarCodeDetectorIfSupported: false // iOS Safari의 불완전한 BarcodeDetector 버그 원천 차단
+        }
+      });
 
       const qrConfig = {
         fps: 15,
-        qrbox: (viewfinderWidth, viewfinderHeight) => {
-          const edge = Math.min(viewfinderWidth, viewfinderHeight);
-          const boxSize = Math.max(200, Math.floor(edge * 0.75));
-          return { width: boxSize, height: boxSize };
-        },
+        qrbox: { width: 250, height: 250 },
         aspectRatio: 1.0
       };
 

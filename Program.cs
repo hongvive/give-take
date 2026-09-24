@@ -23,13 +23,13 @@ namespace GiveAndTake
             _startTime = DateTime.Now;
             _lastHeartbeat = DateTime.Now;
 
-            // 1. 가용 포트 탐색 및 리스너 기동 (충돌 방지 재시도 루프)
+            // 1. 고정 포트 19280 우선 바인딩 (동일 Origin 유지로 localStorage 영구 보존)
             bool started = false;
-            for (int attempt = 0; attempt < 5; attempt++)
+            for (int p = 19280; p <= 19300; p++)
             {
                 try
                 {
-                    _port = FindFreePort();
+                    _port = p;
                     _listener = new HttpListener();
                     _listener.Prefixes.Add(string.Format("http://127.0.0.1:{0}/", _port));
                     _listener.Start();
@@ -38,25 +38,28 @@ namespace GiveAndTake
                 }
                 catch
                 {
-                    Thread.Sleep(100);
+                    try { _listener.Close(); } catch { }
                 }
             }
 
             if (!started)
             {
-                // 최후의 수단: 고정 포트 대역 시도
-                for (int p = 19280; p <= 19300; p++)
+                // 차선책: 동적 가용 포트 시도
+                for (int attempt = 0; attempt < 5; attempt++)
                 {
                     try
                     {
-                        _port = p;
+                        _port = FindFreePort();
                         _listener = new HttpListener();
                         _listener.Prefixes.Add(string.Format("http://127.0.0.1:{0}/", _port));
                         _listener.Start();
                         started = true;
                         break;
                     }
-                    catch { }
+                    catch
+                    {
+                        Thread.Sleep(100);
+                    }
                 }
             }
 
@@ -177,7 +180,7 @@ namespace GiveAndTake
                 string rawUrl = ctx.Request.Url.AbsolutePath.TrimStart('/');
                 if (string.IsNullOrEmpty(rawUrl)) rawUrl = "index.html";
 
-                // 하트비트 처리
+                // 1. 하트비트 처리
                 if (rawUrl.Equals("api/heartbeat", StringComparison.OrdinalIgnoreCase))
                 {
                     _lastHeartbeat = DateTime.Now;
@@ -185,6 +188,43 @@ namespace GiveAndTake
                     ctx.Response.ContentType = "application/json; charset=utf-8";
                     ctx.Response.ContentLength64 = okBytes.Length;
                     ctx.Response.OutputStream.Write(okBytes, 0, okBytes.Length);
+                    ctx.Response.OutputStream.Close();
+                    return;
+                }
+
+                // 2. 로컬 디스크 파일 영구 저장 API (POST)
+                if (rawUrl.Equals("api/save", StringComparison.OrdinalIgnoreCase))
+                {
+                    string dataDir = Path.Combine(_baseDir, "data");
+                    if (!Directory.Exists(dataDir)) Directory.CreateDirectory(dataDir);
+                    string savePath = Path.Combine(dataDir, "gnt_ledger_store.json");
+
+                    using (StreamReader sr = new StreamReader(ctx.Request.InputStream, System.Text.Encoding.UTF8))
+                    {
+                        string body = sr.ReadToEnd();
+                        if (!string.IsNullOrEmpty(body))
+                        {
+                            File.WriteAllText(savePath, body, System.Text.Encoding.UTF8);
+                        }
+                    }
+
+                    byte[] respBytes = System.Text.Encoding.UTF8.GetBytes("{\"status\":\"saved\"}");
+                    ctx.Response.ContentType = "application/json; charset=utf-8";
+                    ctx.Response.ContentLength64 = respBytes.Length;
+                    ctx.Response.OutputStream.Write(respBytes, 0, respBytes.Length);
+                    ctx.Response.OutputStream.Close();
+                    return;
+                }
+
+                // 3. 로컬 디스크 파일 복원 로드 API (GET)
+                if (rawUrl.Equals("api/load", StringComparison.OrdinalIgnoreCase))
+                {
+                    string savePath = Path.Combine(_baseDir, "data", "gnt_ledger_store.json");
+                    string jsonContent = File.Exists(savePath) ? File.ReadAllText(savePath, System.Text.Encoding.UTF8) : "{}";
+                    byte[] dataBytes = System.Text.Encoding.UTF8.GetBytes(jsonContent);
+                    ctx.Response.ContentType = "application/json; charset=utf-8";
+                    ctx.Response.ContentLength64 = dataBytes.Length;
+                    ctx.Response.OutputStream.Write(dataBytes, 0, dataBytes.Length);
                     ctx.Response.OutputStream.Close();
                     return;
                 }
