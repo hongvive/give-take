@@ -1686,7 +1686,169 @@
     }
   }
 
-  // 5. 군사급 안심 완전 삭제 (Wipe)
+  // ==========================================================================
+  // 6. 웹앱 내장 카메라 QR 스캐너 (홈 화면 웹앱 PWA 자체 로컬 동기화)
+  // ==========================================================================
+  let cameraStream = null;
+  let cameraScanAnimId = null;
+  let isCameraScanning = false;
+
+  async function startCameraScanner() {
+    const modal = document.getElementById('cameraScanModal');
+    const video = document.getElementById('cameraVideo');
+    const statusEl = document.getElementById('cameraScanStatus');
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      AppModal.alert('카메라 지원 안 됨', '이 브라우저는 웹 카메라 접근을 지원하지 않습니다. (HTTPS 또는 사파리/크롬 브라우저 필요)', 'error');
+      return;
+    }
+
+    try {
+      modal.classList.add('active');
+      if (statusEl) statusEl.textContent = '카메라 렌즈를 활성화하는 중...';
+
+      // 1순위: 후면 카메라 (environment), 실패 시 기본 카메라
+      try {
+        cameraStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
+        });
+      } catch (e) {
+        cameraStream = await navigator.mediaDevices.getUserMedia({ video: true });
+      }
+
+      video.srcObject = cameraStream;
+      video.setAttribute('playsinline', 'true');
+      await video.play();
+
+      isCameraScanning = true;
+      if (statusEl) statusEl.textContent = '🔍 PC 모니터의 QR 코드를 사각형에 맞추세요.';
+
+      // 실시간 프레임 스캔 루프 개시
+      scanVideoFrame();
+    } catch (err) {
+      console.error('Camera access error:', err);
+      stopCameraScanner();
+      AppModal.alert(
+        '카메라 권한 필요',
+        '카메라를 실행할 수 없습니다.\n[설정] > [Safari / Chrome] > [카메라 접근 허용] 상태를 확인해 주세요.',
+        'error'
+      );
+    }
+  }
+
+  function stopCameraScanner() {
+    isCameraScanning = false;
+    if (cameraScanAnimId) {
+      cancelAnimationFrame(cameraScanAnimId);
+      cameraScanAnimId = null;
+    }
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(track => track.stop());
+      cameraStream = null;
+    }
+    const video = document.getElementById('cameraVideo');
+    if (video) video.srcObject = null;
+    document.getElementById('cameraScanModal')?.classList.remove('active');
+  }
+
+  async function scanVideoFrame() {
+    if (!isCameraScanning) return;
+
+    const video = document.getElementById('cameraVideo');
+    const canvas = document.getElementById('cameraCanvas');
+    const statusEl = document.getElementById('cameraScanStatus');
+
+    if (video && video.readyState === video.HAVE_ENOUGH_DATA) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      let detectedCode = null;
+
+      // 엔진 1: 최신 브라우저 네이티브 BarcodeDetector (초고속 하드웨어 가속)
+      if ('BarcodeDetector' in window) {
+        try {
+          const detector = new window.BarcodeDetector({ formats: ['qr_code'] });
+          const barcodes = await detector.detect(canvas);
+          if (barcodes && barcodes.length > 0) {
+            detectedCode = barcodes[0].rawValue;
+          }
+        } catch (e) {}
+      }
+
+      // 엔진 2: 순수 JS jsQR 라이브러리 (아이패드/아이폰 Safari 100% 호환 폴백)
+      if (!detectedCode && typeof jsQR === 'function') {
+        try {
+          const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const code = jsQR(imgData.data, imgData.width, imgData.height, {
+            inversionAttempts: 'dontInvert'
+          });
+          if (code && code.data) {
+            detectedCode = code.data;
+          }
+        } catch (e) {}
+      }
+
+      if (detectedCode) {
+        // QR 코드 인식 성공!
+        if (statusEl) statusEl.textContent = '✨ QR 코드 인식 성공!';
+        if (navigator.vibrate) navigator.vibrate(100);
+
+        stopCameraScanner();
+        handleScannedQRData(detectedCode);
+        return;
+      }
+    }
+
+    if (isCameraScanning) {
+      cameraScanAnimId = requestAnimationFrame(scanVideoFrame);
+    }
+  }
+
+  async function handleScannedQRData(rawContent) {
+    try {
+      const records = parseSyncTextLines(rawContent);
+      if (!records || records.length === 0) {
+        AppModal.alert('스캔 데이터 오류', '스캔한 QR 코드에 유효한 장부 데이터가 포함되어 있지 않습니다.', 'warn');
+        return;
+      }
+
+      const ok = await AppModal.confirm(
+        '📷 웹앱 실시간 동기화',
+        `스캔 성공! 총 ${records.length}건의 장부 데이터가 확인되었습니다.\n\n현재 홈 화면 웹앱 장부에 즉시 반영하시겠습니까?`,
+        { okText: '웹앱 장부에 추가', cancelText: '취소', stamp: '即時' }
+      );
+
+      if (ok) {
+        let addedCount = 0;
+        records.forEach(newR => {
+          const isDuplicate = state.records.some(r =>
+            r.date === newR.date &&
+            r.name === newR.name &&
+            r.amount === newR.amount &&
+            r.eventName === newR.eventName &&
+            r.type === newR.type
+          );
+          if (!isDuplicate) {
+            state.records.unshift(newR);
+            addedCount++;
+          }
+        });
+
+        saveRecords();
+        refreshAllViews();
+        if (typeof window.fireBigCelebration === 'function') {
+          window.fireBigCelebration();
+        }
+        showToast(`🎉 총 ${addedCount}건이 웹앱 장부에 성공적으로 저장되었습니다!`, 'success');
+      }
+    } catch (err) {
+      AppModal.alert('동기화 오류', '장부 데이터 처리 중 오류: ' + err.message, 'error');
+    }
+  }
+
+  // 7. 군사급 안심 완전 삭제 (Wipe)
   async function wipeAllData() {
     const firstOk = await AppModal.confirm(
       '⚠️ 데이터 영구 완전 삭제 1차 확인',
@@ -1875,6 +2037,11 @@
       generateSyncQRPages(e.target.value);
     });
     document.getElementById('btnCopySyncLink')?.addEventListener('click', copySyncLink);
+
+    // 웹앱 내장 카메라 QR 스캐너 (PWA 홈 화면 바로가기용)
+    document.getElementById('btnStartCameraScan')?.addEventListener('click', startCameraScanner);
+    document.getElementById('btnCloseCameraScanModal')?.addEventListener('click', stopCameraScanner);
+    document.getElementById('btnStopCameraScan')?.addEventListener('click', stopCameraScanner);
 
     document.getElementById('btnCopyMobileSyncText')?.addEventListener('click', copyMobileSyncText);
     document.getElementById('btnOpenPasteSyncModal')?.addEventListener('click', openPasteSyncModal);
