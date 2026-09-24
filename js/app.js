@@ -1,7 +1,7 @@
 /**
- * app.js - 기부태익 (期赴泰益) : 경조사에 때맞춰 찾아가(期赴) 큰 보탬을 나눈다(泰益)
+ * app.js - 기부태익 (期赴泰益) v1.00 : 경조사에 때맞춰 찾아가(期赴) 큰 보탬을 나눈다(泰益)
  * 경조사 수지 장부 및 인맥 관리 프로그램 핵심 비즈니스 로직
- * K-Traditional Modern 디자인 시스템 및 로컬 퍼스트 아키텍처
+ * K-Traditional Modern 디자인 시스템, 무서버 로컬 퍼스트 아키텍처 및 SheetJS(XLSX) 대량 처리
  */
 
 (function () {
@@ -31,7 +31,6 @@
     initEventListeners();
     updateLocalIpGuide();
 
-    // 데이터가 아예 없으면 안내 토스트
     if (state.records.length === 0 && state.contacts.length === 0) {
       showToast('새 장부입니다. 상단의 [샘플 불러오기]를 누르면 시연 데이터를 체험할 수 있습니다.');
     }
@@ -94,15 +93,23 @@
     renderDashboard();
     renderLedger();
     renderContacts();
+    updateSampleUI();
   }
 
   // ==========================================================================
-  // 샘플 데이터 생성 (리얼한 한국인 경조사 시연용)
+  // 샘플 데이터 관리 (기존 데이터 완벽 보존 & 원클릭 샘플 삭제)
   // ==========================================================================
   function loadSampleData() {
+    const hasSample = state.records.some(r => r.isSample || (r.id && r.id.startsWith('rec_sample_')));
+    if (hasSample) {
+      showToast('이미 시연용 샘플 데이터 8건이 로드되어 있습니다.', 'info');
+      return;
+    }
+
     const samples = [
       {
-        id: 'rec_01',
+        id: 'rec_sample_1',
+        isSample: true,
         type: 'take',
         date: '2025-05-18',
         category: '축의',
@@ -117,7 +124,8 @@
         memo: '회사 사수, 호텔 식사 참석'
       },
       {
-        id: 'rec_02',
+        id: 'rec_sample_2',
+        isSample: true,
         type: 'give',
         date: '2024-03-10',
         category: '축의',
@@ -132,7 +140,8 @@
         memo: '선물 별도 전달'
       },
       {
-        id: 'rec_03',
+        id: 'rec_sample_3',
+        isSample: true,
         type: 'give',
         date: '2024-11-02',
         category: '축의',
@@ -147,7 +156,8 @@
         memo: '강남 호텔 예식'
       },
       {
-        id: 'rec_04',
+        id: 'rec_sample_4',
+        isSample: true,
         type: 'give',
         date: '2025-01-15',
         category: '조의',
@@ -162,7 +172,8 @@
         memo: '서울성모 장례식장'
       },
       {
-        id: 'rec_05',
+        id: 'rec_sample_5',
+        isSample: true,
         type: 'take',
         date: '2025-05-18',
         category: '축의',
@@ -177,7 +188,8 @@
         memo: '동일 금액 품앗이 완료'
       },
       {
-        id: 'rec_06',
+        id: 'rec_sample_6',
+        isSample: true,
         type: 'give',
         date: '2023-09-20',
         category: '축의',
@@ -192,7 +204,8 @@
         memo: '부모님 대신 전달한 친척 축의'
       },
       {
-        id: 'rec_07',
+        id: 'rec_sample_7',
+        isSample: true,
         type: 'give',
         date: '2024-06-12',
         category: '기타',
@@ -207,7 +220,8 @@
         memo: '화환 7만원 + 봉투 3만원'
       },
       {
-        id: 'rec_08',
+        id: 'rec_sample_8',
+        isSample: true,
         type: 'take',
         date: '2025-05-18',
         category: '축의',
@@ -223,12 +237,35 @@
       }
     ];
 
-    state.records = samples;
+    // 기존 사용자 입력 데이터를 100% 보존하면서 샘플을 추가
+    state.records = [...samples, ...state.records];
     saveRecords();
     if (typeof window.fireBigCelebration === 'function') {
       window.fireBigCelebration();
     }
-    showToast('📜 기부태익 시연용 경조사 샘플 8건이 로드되었습니다!', 'success');
+    showToast('📜 시연용 샘플 8건이 추가되었습니다! (기존 데이터 완벽 보존)', 'success');
+  }
+
+  async function removeSampleData() {
+    const ok = await AppModal.confirm(
+      '샘플 데이터 삭제',
+      '시연용 샘플 내역 8건을 삭제하시겠습니까?\n(직접 등록하신 소중한 데이터는 안전하게 보존됩니다)',
+      { danger: true, okText: '샘플만 삭제', stamp: '整頓' }
+    );
+
+    if (ok) {
+      state.records = state.records.filter(r => !r.isSample && (!r.id || !r.id.startsWith('rec_sample_')));
+      saveRecords();
+      showToast('🗑️ 시연용 샘플 내역이 모두 삭제되었습니다.', 'warn');
+    }
+  }
+
+  function updateSampleUI() {
+    const btnRemove = document.getElementById('btnRemoveSampleData');
+    const hasSample = state.records.some(r => r.isSample || (r.id && r.id.startsWith('rec_sample_')));
+    if (btnRemove) {
+      btnRemove.style.display = hasSample ? 'inline-flex' : 'none';
+    }
   }
 
   // ==========================================================================
@@ -500,6 +537,7 @@
       const amountClass = isGive ? 'val-vermilion' : 'val-jade';
 
       const pumasiTag = r.isPumasi ? `<span class="tag-pumasi">품앗이</span>` : '';
+      const sampleTag = r.isSample || (r.id && r.id.startsWith('rec_sample_')) ? `<span class="tag-pumasi" style="background:#F0F4FF; color:#3B82F6; border-color:#93C5FD;">샘플</span>` : '';
       const thankedBadge = r.isThanked
         ? `<span style="color: var(--color-jade); font-weight:700; font-size:11px;">✓ 완료</span>`
         : `<span style="color: var(--color-secondary); font-size:11px;">-</span>`;
@@ -511,6 +549,7 @@
           <td>
             <strong style="cursor: pointer; color: var(--color-navy);" onclick="openContactTimeline('${r.phone || r.name}')">${escapeHtml(r.name)}</strong>
             ${pumasiTag}
+            ${sampleTag}
           </td>
           <td style="font-size: 12px; color: var(--color-secondary); font-family: monospace;">${escapeHtml(r.phone)}</td>
           <td><span class="badge-tag badge-category">${escapeHtml(r.group)}</span></td>
@@ -591,7 +630,7 @@
     contacts.sort((a, b) => b.count - a.count);
 
     if (contacts.length === 0) {
-      grid.innerHTML = `<div style="grid-column: 1 / -1; text-align:center; padding: 40px; color: var(--color-secondary);">해당 조건의 인맥이 없습니다. [인맥 대량 업로드]로 지인 명단을 등록해보세요.</div>`;
+      grid.innerHTML = `<div style="grid-column: 1 / -1; text-align:center; padding: 40px; color: var(--color-secondary);">해당 조건의 인맥이 없습니다. [인맥 대량 업로드]로 엑셀 지인 명단을 등록해보세요.</div>`;
       return;
     }
 
@@ -850,58 +889,83 @@
   }
 
   // ==========================================================================
-  // 엑셀(CSV) 양식 다운로드 & 대량 업로드
+  // 순수 엑셀(XLSX) 양식 다운로드 & 대량 업로드 (SheetJS 기반 무손실 처리)
   // ==========================================================================
 
-  // 1. 장부 엑셀 등록 샘플 양식 다운로드
-  function downloadLedgerTemplate() {
+  // 1. 장부 엑셀(XLSX) 표준 양식 다운로드
+  function downloadLedgerTemplateXLSX() {
     const headers = ['일자', '구분', '성명', '연락처', '그룹', '행사명', '분류', '금액', '참석여부', '품앗이', '답례감사', '메모'];
     const sampleRows = [
-      ['2025-05-18', '받음', '이민호', '010-3456-7890', '직장', '내 결혼식 축의금', '축의', '200000', '참석(식사)', 'N', 'Y', '회사 사수'],
-      ['2024-03-10', '보냄', '이민호', '010-3456-7890', '직장', '사수 첫째 돌잔치', '축의', '100000', '참석(식사)', 'N', 'Y', '선물 별도 전달'],
-      ['2025-01-15', '보냄', '정우성', '010-5544-3322', '직장', '부친상 조의금', '조의', '100000', '참석(식사)', 'N', 'Y', '서울성모 장례식장']
+      ['2025-05-18', '받음', '이민호', '010-3456-7890', '직장', '내 결혼식 축의금', '축의', 200000, '참석(식사)', 'N', 'Y', '회사 사수'],
+      ['2024-03-10', '보냄', '이민호', '010-3456-7890', '직장', '사수 첫째 돌잔치', '축의', 100000, '참석(식사)', 'N', 'Y', '선물 별도 전달'],
+      ['2025-01-15', '보냄', '정우성', '010-5544-3322', '직장', '부친상 조의금', '조의', 100000, '참석(식사)', 'N', 'Y', '서울성모 장례식장']
     ];
-    const csvContent = '\uFEFF' + [headers.join(','), ...sampleRows.map(r => r.join(','))].join('\r\n');
-    downloadFile(csvContent, '기부태익_장부등록_양식.csv', 'text/csv;charset=utf-8;');
-    showToast('📥 경조사 장부 등록용 엑셀 샘플 양식이 다운로드되었습니다.', 'success');
+
+    if (typeof XLSX !== 'undefined') {
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...sampleRows]);
+      ws['!cols'] = [
+        { wch: 12 }, { wch: 8 }, { wch: 10 }, { wch: 15 },
+        { wch: 10 }, { wch: 22 }, { wch: 10 }, { wch: 12 },
+        { wch: 14 }, { wch: 8 }, { wch: 10 }, { wch: 25 }
+      ];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, '경조사장부_양식');
+      XLSX.writeFile(wb, '기부태익_장부등록_양식.xlsx');
+    } else {
+      // 폴백 CSV
+      const csvContent = '\uFEFF' + [headers.join(','), ...sampleRows.map(r => r.join(','))].join('\r\n');
+      downloadFile(csvContent, '기부태익_장부등록_양식.csv', 'text/csv;charset=utf-8;');
+    }
+    showToast('📥 엑셀(XLSX) 장부 등록 양식이 다운로드되었습니다.', 'success');
   }
 
-  // 2. 장부 엑셀 대량 업로드
-  function uploadLedgerCSV(file) {
+  // 2. 장부 엑셀(XLSX) 대량 업로드
+  function uploadLedgerExcel(file) {
     const reader = new FileReader();
     reader.onload = async (e) => {
       try {
-        const text = e.target.result;
-        const parsed = parseCSV(text);
-        if (!parsed || parsed.rows.length === 0) {
+        let rows = [];
+        if (typeof XLSX !== 'undefined') {
+          const data = new Uint8Array(e.target.result);
+          const wb = XLSX.read(data, { type: 'array' });
+          const sheetName = wb.SheetNames[0];
+          rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1 });
+        } else {
+          // CSV 파서 폴백
+          const text = new TextDecoder('utf-8').decode(new Uint8Array(e.target.result));
+          const parsed = parseCSV(text);
+          if (parsed) rows = [parsed.headers, ...parsed.rows];
+        }
+
+        if (!rows || rows.length < 2) {
           throw new Error('파일에 데이터 행이 존재하지 않습니다.');
         }
 
         const newRecords = [];
-        for (let i = 0; i < parsed.rows.length; i++) {
-          const row = parsed.rows[i];
-          if (row.length < 3 || !row[2]) continue; // 성명 필수
+        for (let i = 1; i < rows.length; i++) {
+          const row = rows[i];
+          if (!row || row.length === 0 || !row[2]) continue; // 성명 필수
 
-          const rawDate = row[0] || new Date().toISOString().split('T')[0];
-          const rawType = (row[1] || '').trim();
+          const rawDate = row[0] ? String(row[0]).trim() : new Date().toISOString().split('T')[0];
+          const rawType = String(row[1] || '').trim();
           const isGive = rawType.includes('보냄') || rawType.toLowerCase() === 'give';
 
-          const name = row[2].trim();
-          const phone = (row[3] || '').trim();
-          const group = (row[4] || '기타').trim();
-          const eventName = (row[5] || '경조사').trim();
-          const category = (row[6] || '축의').trim();
+          const name = String(row[2]).trim();
+          const phone = String(row[3] || '').trim();
+          const group = String(row[4] || '기타').trim();
+          const eventName = String(row[5] || '경조사').trim();
+          const category = String(row[6] || '축의').trim();
           const rawAmount = String(row[7] || '0').replace(/[^0-9]/g, '');
           const amount = Number(rawAmount) || 0;
-          const attendance = (row[8] || '참석(식사)').trim();
-          const rawPumasi = (row[9] || '').toUpperCase();
+          const attendance = String(row[8] || '참석(식사)').trim();
+          const rawPumasi = String(row[9] || '').toUpperCase();
           const isPumasi = rawPumasi.includes('Y') || rawPumasi.includes('1') || rawPumasi.includes('예');
-          const rawThanked = (row[10] || '').toUpperCase();
+          const rawThanked = String(row[10] || '').toUpperCase();
           const isThanked = rawThanked.includes('Y') || rawThanked.includes('1') || rawThanked.includes('완료');
-          const memo = (row[11] || '').trim();
+          const memo = String(row[11] || '').trim();
 
           newRecords.push({
-            id: 'rec_csv_' + Date.now() + '_' + i,
+            id: 'rec_excel_' + Date.now() + '_' + i,
             type: isGive ? 'give' : 'take',
             date: rawDate,
             category: category,
@@ -922,7 +986,7 @@
         }
 
         const ok = await AppModal.confirm(
-          '장부 엑셀 대량 등록',
+          '장부 엑셀(XLSX) 대량 등록',
           `파일에서 총 ${newRecords.length}건의 경조사 내역을 읽었습니다.\n기존 장부에 추가(병합)하시겠습니까?`,
           { okText: '등록하기', stamp: '登錄' }
         );
@@ -936,45 +1000,64 @@
           showToast(`🎉 총 ${newRecords.length}건의 경조사 내역이 엑셀에서 대량 등록되었습니다!`, 'success');
         }
       } catch (err) {
-        AppModal.alert('엑셀 업로드 실패', 'CSV 파일을 분석하는 중 오류가 발생했습니다: ' + err.message, 'error');
+        AppModal.alert('엑셀 업로드 실패', '엑셀 파일을 분석하는 중 오류가 발생했습니다: ' + err.message, 'error');
       }
     };
-    reader.readAsText(file);
+    reader.readAsArrayBuffer(file);
   }
 
-  // 3. 인맥 엑셀 샘플 양식 다운로드
-  function downloadContactTemplate() {
+  // 3. 인맥 엑셀(XLSX) 샘플 양식 다운로드
+  function downloadContactTemplateXLSX() {
     const headers = ['성명', '연락처', '소속그룹', '메모'];
     const sampleRows = [
       ['홍길동', '010-1234-5678', '직장', '기획팀 동료'],
       ['김영희', '010-9876-5432', '친구', '고등학교 동창'],
       ['박철수', '010-5555-4444', '친척', '사촌 형']
     ];
-    const csvContent = '\uFEFF' + [headers.join(','), ...sampleRows.map(r => r.join(','))].join('\r\n');
-    downloadFile(csvContent, '기부태익_인맥등록_양식.csv', 'text/csv;charset=utf-8;');
-    showToast('📥 인맥 등록용 엑셀 샘플 양식이 다운로드되었습니다.', 'success');
+
+    if (typeof XLSX !== 'undefined') {
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...sampleRows]);
+      ws['!cols'] = [{ wch: 12 }, { wch: 16 }, { wch: 12 }, { wch: 30 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, '인맥_양식');
+      XLSX.writeFile(wb, '기부태익_인맥등록_양식.xlsx');
+    } else {
+      const csvContent = '\uFEFF' + [headers.join(','), ...sampleRows.map(r => r.join(','))].join('\r\n');
+      downloadFile(csvContent, '기부태익_인맥등록_양식.csv', 'text/csv;charset=utf-8;');
+    }
+    showToast('📥 인맥 등록용 엑셀(XLSX) 샘플 양식이 다운로드되었습니다.', 'success');
   }
 
-  // 4. 인맥 엑셀 대량 업로드
-  function uploadContactCSV(file) {
+  // 4. 인맥 엑셀(XLSX) 대량 업로드
+  function uploadContactExcel(file) {
     const reader = new FileReader();
     reader.onload = async (e) => {
       try {
-        const text = e.target.result;
-        const parsed = parseCSV(text);
-        if (!parsed || parsed.rows.length === 0) {
+        let rows = [];
+        if (typeof XLSX !== 'undefined') {
+          const data = new Uint8Array(e.target.result);
+          const wb = XLSX.read(data, { type: 'array' });
+          const sheetName = wb.SheetNames[0];
+          rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1 });
+        } else {
+          const text = new TextDecoder('utf-8').decode(new Uint8Array(e.target.result));
+          const parsed = parseCSV(text);
+          if (parsed) rows = [parsed.headers, ...parsed.rows];
+        }
+
+        if (!rows || rows.length < 2) {
           throw new Error('파일에 데이터 행이 존재하지 않습니다.');
         }
 
         const newContacts = [];
-        for (let i = 0; i < parsed.rows.length; i++) {
-          const row = parsed.rows[i];
-          if (!row[0]) continue; // 성명 필수
+        for (let i = 1; i < rows.length; i++) {
+          const row = rows[i];
+          if (!row || row.length === 0 || !row[0]) continue; // 성명 필수
 
-          const name = row[0].trim();
-          const phone = (row[1] || '').trim();
-          const group = (row[2] || '기타').trim();
-          const memo = (row[3] || '').trim();
+          const name = String(row[0]).trim();
+          const phone = String(row[1] || '').trim();
+          const group = String(row[2] || '기타').trim();
+          const memo = String(row[3] || '').trim();
 
           newContacts.push({ name, phone, group, memo });
         }
@@ -984,13 +1067,12 @@
         }
 
         const ok = await AppModal.confirm(
-          '인맥 엑셀 대량 등록',
+          '인맥 엑셀(XLSX) 대량 등록',
           `파일에서 총 ${newContacts.length}명의 지인 명단을 읽었습니다.\n인맥 장부에 등록(병합)하시겠습니까?`,
           { okText: '등록하기', stamp: '人脈' }
         );
 
         if (ok) {
-          // 중복 병합
           const existingMap = {};
           (state.contacts || []).forEach(c => {
             existingMap[c.phone || c.name] = c;
@@ -1010,13 +1092,80 @@
           showToast(`👥 총 ${newContacts.length}명의 지인이 인맥 장부에 등록되었습니다!`, 'success');
         }
       } catch (err) {
-        AppModal.alert('인맥 업로드 실패', 'CSV 파일을 분석하는 중 오류가 발생했습니다: ' + err.message, 'error');
+        AppModal.alert('인맥 업로드 실패', '엑셀 파일을 분석하는 중 오류가 발생했습니다: ' + err.message, 'error');
       }
     };
-    reader.readAsText(file);
+    reader.readAsArrayBuffer(file);
   }
 
-  // CSV 파서 유틸리티 (따옴표 및 쉼표 안전 처리)
+  // 5. 현재 장부 엑셀(XLSX) 저장
+  function exportExcel() {
+    if (state.records.length === 0) {
+      showToast('내보낼 장부 데이터가 없습니다.', 'warn');
+      return;
+    }
+
+    const headers = ['일자', '구분', '성명', '연락처', '그룹', '행사명', '분류', '금액', '참석여부', '품앗이여부', '답례감사여부', '메모'];
+    const rows = state.records.map(r => [
+      r.date,
+      r.type === 'give' ? '보냄(Give)' : '받음(Take)',
+      r.name,
+      r.phone,
+      r.group,
+      r.eventName,
+      r.category,
+      Number(r.amount) || 0,
+      r.attendance || '',
+      r.isPumasi ? 'Y' : 'N',
+      r.isThanked ? 'Y' : 'N',
+      r.memo || ''
+    ]);
+
+    if (typeof XLSX !== 'undefined') {
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+      ws['!cols'] = [
+        { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 15 },
+        { wch: 10 }, { wch: 22 }, { wch: 10 }, { wch: 14 },
+        { wch: 14 }, { wch: 10 }, { wch: 12 }, { wch: 25 }
+      ];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, '경조사장부');
+      XLSX.writeFile(wb, `기부태익_경조사장부_${getTodayDateString()}.xlsx`);
+      showToast('📥 엑셀(XLSX) 장부 파일이 저장되었습니다.', 'success');
+    } else {
+      exportCSV();
+    }
+  }
+
+  // 6. CSV 폴백 내보내기
+  function exportCSV() {
+    if (state.records.length === 0) {
+      showToast('내보낼 장부 데이터가 없습니다.', 'warn');
+      return;
+    }
+
+    const headers = ['일자', '구분', '성명', '연락처', '그룹', '행사명', '분류', '금액', '참석여부', '품앗이여부', '답례감사여부', '메모'];
+    const rows = state.records.map(r => [
+      `"${r.date}"`,
+      `"${r.type === 'give' ? '보냄(Give)' : '받음(Take)'}"`,
+      `"${r.name}"`,
+      `"${r.phone}"`,
+      `"${r.group}"`,
+      `"${r.eventName}"`,
+      `"${r.category}"`,
+      r.amount,
+      `"${r.attendance || ''}"`,
+      `"${r.isPumasi ? 'Y' : 'N'}"`,
+      `"${r.isThanked ? 'Y' : 'N'}"`,
+      `"${(r.memo || '').replace(/"/g, '""')}"`
+    ]);
+
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(e => e.join(','))].join('\r\n');
+    downloadFile(csvContent, `기부태익_경조사장부_${getTodayDateString()}.csv`, 'text/csv;charset=utf-8;');
+    showToast('📥 엑셀(CSV) 장부 파일이 다운로드되었습니다.', 'success');
+  }
+
+  // CSV 파서 유틸리티 (폴백용)
   function parseCSV(text) {
     if (text.charCodeAt(0) === 0xFEFF) {
       text = text.slice(1);
@@ -1060,53 +1209,25 @@
   }
 
   // ==========================================================================
-  // 데이터 관리 & 무서버 동기화 (QR / JSON / CSV / Wipe)
+  // 데이터 관리 & 무서버 동기화 (QR / JSON / Wipe)
   // ==========================================================================
 
-  // 1. 현재 장부 엑셀(CSV) 저장
-  function exportCSV() {
-    if (state.records.length === 0) {
-      showToast('내보낼 장부 데이터가 없습니다.', 'warn');
-      return;
-    }
-
-    const headers = ['일자', '구분', '성명', '연락처', '그룹', '행사명', '분류', '금액', '참석여부', '품앗이여부', '답례감사여부', '메모'];
-    const rows = state.records.map(r => [
-      `"${r.date}"`,
-      `"${r.type === 'give' ? '보냄(Give)' : '받음(Take)'}"`,
-      `"${r.name}"`,
-      `"${r.phone}"`,
-      `"${r.group}"`,
-      `"${r.eventName}"`,
-      `"${r.category}"`,
-      r.amount,
-      `"${r.attendance || ''}"`,
-      `"${r.isPumasi ? 'Y' : 'N'}"`,
-      `"${r.isThanked ? 'Y' : 'N'}"`,
-      `"${(r.memo || '').replace(/"/g, '""')}"`
-    ]);
-
-    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(e => e.join(','))].join('\r\n');
-    downloadFile(csvContent, `기부태익_경조사장부_${getTodayDateString()}.csv`, 'text/csv;charset=utf-8;');
-    showToast('📥 엑셀(CSV) 장부 파일이 다운로드되었습니다.', 'success');
-  }
-
-  // 2. JSON 전체 백업
+  // 1. JSON 전체 백업
   function exportJSON() {
     const backupData = {
       app: '기부태익 (期赴泰益)',
-      version: '1.2',
+      version: '1.00',
       exportedAt: new Date().toISOString(),
       recordCount: state.records.length,
       records: state.records,
       contacts: state.contacts
     };
     const jsonStr = JSON.stringify(backupData, null, 2);
-    downloadFile(jsonStr, `기부태익_백업_${getTodayDateString()}.json`, 'application/json');
+    downloadFile(jsonStr, `기부태익_백업_v1.00_${getTodayDateString()}.json`, 'application/json');
     showToast('💾 안전 백업 JSON 파일이 다운로드되었습니다.', 'success');
   }
 
-  // 3. JSON 복원
+  // 2. JSON 복원
   function importJSON(file) {
     const reader = new FileReader();
     reader.onload = async (e) => {
@@ -1141,7 +1262,7 @@
     reader.readAsText(file);
   }
 
-  // 4. QR 코드 무서버 기기 전송 (대량 데이터 분할 페이징 지원 - 용량 초과 원천 방지)
+  // 3. QR 코드 무서버 기기 전송 (20건 단위 분할 페이징으로 용량 초과 원천 방지)
   function showSyncQR() {
     if (state.records.length === 0) {
       showToast('동기화할 장부 내역이 없습니다.', 'warn');
@@ -1149,7 +1270,7 @@
     }
 
     try {
-      const CHUNK_SIZE = 20; // 20건 단위로 깔끔 분할
+      const CHUNK_SIZE = 20;
       const totalPages = Math.ceil(state.records.length / CHUNK_SIZE);
       state.qrPages = [];
 
@@ -1186,7 +1307,6 @@
     }
   }
 
-  // QR 페이지 렌더링
   function renderQrPage(index) {
     if (index < 0 || index >= state.qrPages.length) return;
     state.qrCurrentPageIndex = index;
@@ -1217,7 +1337,7 @@
     }
   }
 
-  // 5. QR 데이터 불러오기 모달
+  // 4. QR 데이터 불러오기 모달
   async function promptScanQR() {
     const raw = prompt('QR 코드에서 복사된 데이터 텍스트(GNT... 또는 백업 JSON)를 붙여넣으세요:');
     if (!raw) return;
@@ -1226,9 +1346,7 @@
       let recordsToRestore = [];
 
       if (raw.startsWith('GNT3:')) {
-        // GNT3:P1/3:\n...
         const lines = raw.split('\n');
-        const header = lines[0]; // GNT3:P1/3:
         for (let i = 1; i < lines.length; i++) {
           const line = lines[i].trim();
           if (!line) continue;
@@ -1289,7 +1407,7 @@
     }
   }
 
-  // 6. 군사급 안심 완전 삭제 (Wipe)
+  // 5. 군사급 안심 완전 삭제 (Wipe)
   async function wipeAllData() {
     const firstOk = await AppModal.confirm(
       '⚠️ 데이터 영구 완전 삭제 1차 확인',
@@ -1333,7 +1451,10 @@
     // 새 내역 추가 버튼
     document.getElementById('btnOpenNewRecord')?.addEventListener('click', () => openRecordModal());
     document.getElementById('btnRecordAddInTab')?.addEventListener('click', () => openRecordModal());
+
+    // 샘플 불러오기 및 삭제 버튼
     document.getElementById('btnLoadSampleData')?.addEventListener('click', loadSampleData);
+    document.getElementById('btnRemoveSampleData')?.addEventListener('click', removeSampleData);
 
     // 모달 닫기 버튼들
     document.getElementById('btnCancelRecordModal')?.addEventListener('click', closeRecordModal);
@@ -1417,26 +1538,27 @@
     document.getElementById('contactSearch')?.addEventListener('input', renderContacts);
     document.getElementById('contactGroupFilter')?.addEventListener('change', renderContacts);
 
-    // 장부 엑셀 샘플 다운로드 & 업로드
-    document.getElementById('btnDownloadLedgerTemplate')?.addEventListener('click', downloadLedgerTemplate);
-    document.getElementById('btnUploadLedgerCSV')?.addEventListener('click', () => {
-      document.getElementById('csvLedgerInput')?.click();
+    // 장부 엑셀(XLSX) 양식 다운로드 & 업로드
+    document.getElementById('btnDownloadLedgerTemplate')?.addEventListener('click', downloadLedgerTemplateXLSX);
+    document.getElementById('btnUploadLedgerExcel')?.addEventListener('click', () => {
+      document.getElementById('excelLedgerInput')?.click();
     });
-    document.getElementById('csvLedgerInput')?.addEventListener('change', (e) => {
+    document.getElementById('excelLedgerInput')?.addEventListener('change', (e) => {
       if (e.target.files && e.target.files[0]) {
-        uploadLedgerCSV(e.target.files[0]);
+        uploadLedgerExcel(e.target.files[0]);
         e.target.value = '';
       }
     });
+    document.getElementById('btnExportExcel')?.addEventListener('click', exportExcel);
 
-    // 인맥 엑셀 샘플 다운로드 & 업로드
-    document.getElementById('btnDownloadContactTemplate')?.addEventListener('click', downloadContactTemplate);
-    document.getElementById('btnUploadContactCSV')?.addEventListener('click', () => {
-      document.getElementById('csvContactInput')?.click();
+    // 인맥 엑셀(XLSX) 양식 다운로드 & 업로드
+    document.getElementById('btnDownloadContactTemplate')?.addEventListener('click', downloadContactTemplateXLSX);
+    document.getElementById('btnUploadContactExcel')?.addEventListener('click', () => {
+      document.getElementById('excelContactInput')?.click();
     });
-    document.getElementById('csvContactInput')?.addEventListener('change', (e) => {
+    document.getElementById('excelContactInput')?.addEventListener('change', (e) => {
       if (e.target.files && e.target.files[0]) {
-        uploadContactCSV(e.target.files[0]);
+        uploadContactExcel(e.target.files[0]);
         e.target.value = '';
       }
     });
@@ -1486,7 +1608,7 @@
       if (typeof window.fireBigCelebration === 'function') {
         window.fireBigCelebration();
       }
-      showToast('💮 기부태익 (期赴泰益) 시스템 인증: 환영합니다!', 'success');
+      showToast('💮 기부태익 (期赴泰益) v1.00 시스템 인증: 환영합니다!', 'success');
     });
   }
 

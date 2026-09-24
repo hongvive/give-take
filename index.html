@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>기부태익 (期赴泰益) : 경조사에 때맞춰 찾아가(期赴) 큰 보탬을 나눈다(泰益) - 경조사 장부</title>
+  <title>기부태익 (期赴泰益) v1.00 : 경조사에 때맞춰 찾아가(期赴) 큰 보탬을 나눈다(泰益) - 경조사 장부</title>
   <link rel="icon" type="image/x-icon" href="assets/favicon.ico">
   <link rel="apple-touch-icon" href="assets/icon.png">
   
@@ -45,11 +45,11 @@
     <!-- 1. K-Traditional Modern 전통 헤더 -->
     <header class="app-header">
       <div class="brand-box">
-        <img src="assets/logo.png" alt="기부태익 로고" style="width: 48px; height: 48px; border-radius: 12px; object-fit: cover; border: 2px solid var(--border-gold); box-shadow: 0 4px 10px rgba(197, 155, 39, 0.25);" />
+        <img src="assets/icon.png" alt="기부태익 로고" style="width: 48px; height: 48px; border-radius: 12px; object-fit: cover; box-shadow: 0 4px 10px rgba(27, 42, 74, 0.25);" />
         <div>
           <h1 class="brand-title">
             기부태익 (期赴泰益)
-            <span class="brand-badge">경조사 원장</span>
+            <span class="brand-badge">경조사 원장 v1.00</span>
           </h1>
           <p class="brand-desc">경조사에 때맞춰 찾아가(期赴) 큰 보탬을 나눈다(泰益)</p>
         </div>
@@ -59,8 +59,11 @@
         <button type="button" class="btn btn-vermilion" id="btnOpenNewRecord">
           <span>✍️</span> 새 내역 기록
         </button>
-        <button type="button" class="btn btn-gold" id="btnLoadSampleData" title="체험용 샘플 데이터를 채웁니다">
+        <button type="button" class="btn btn-gold" id="btnLoadSampleData" title="체험용 샘플 데이터를 추가합니다 (기존 입력 데이터 완벽 보존)">
           <span>📜</span> 샘플 불러오기
+        </button>
+        <button type="button" class="btn btn-outline" id="btnRemoveSampleData" style="display: none; color: var(--color-vermilion); border-color: var(--color-vermilion);" title="불러온 시연용 샘플 8건을 삭제합니다 (직접 입력한 데이터는 안전하게 보존)">
+          <span>🗑️</span> 샘플 삭제
         </button>
       </div>
     </header>
@@ -261,15 +264,15 @@
         </div>
 
         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-          <button type="button" class="btn btn-outline" id="btnDownloadLedgerTemplate" title="장부 엑셀 등록 샘플 양식을 내려받습니다">
-            <span>📥</span> 양식 다운로드
+          <button type="button" class="btn btn-outline" id="btnDownloadLedgerTemplate" title="장부 엑셀(XLSX) 표준 샘플 양식을 내려받습니다">
+            <span>📥</span> 양식 다운(XLSX)
           </button>
-          <button type="button" class="btn btn-primary" id="btnUploadLedgerCSV" title="엑셀(CSV) 파일로 장부 내역을 대량 등록합니다">
+          <button type="button" class="btn btn-primary" id="btnUploadLedgerExcel" title="엑셀(XLSX) 파일로 장부 내역을 대량 등록합니다">
             <span>📤</span> 엑셀 대량 업로드
           </button>
-          <input type="file" id="csvLedgerInput" accept=".csv" style="display: none;" />
-          <button type="button" class="btn btn-outline" id="btnExportCSV" title="현재 장부 데이터를 엑셀(CSV)로 저장합니다">
-            <span>💾</span> 엑셀 저장
+          <input type="file" id="excelLedgerInput" accept=".xlsx,.xls,.csv" style="display: none;" />
+          <button type="button" class="btn btn-outline" id="btnExportExcel" title="현재 장부 데이터를 엑셀(XLSX) 파일로 저장합니다">
+            <span>💾</span> 엑셀 저장(XLSX)
           </button>
           <button type="button" class="btn btn-vermilion" id="btnRecordAddInTab">
             <span>✍️</span> 새 내역 추가
@@ -330,13 +333,13 @@
           </select>
         </div>
         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-          <button type="button" class="btn btn-outline" id="btnDownloadContactTemplate" title="인맥 등록용 샘플 엑셀 양식을 내려받습니다">
-            <span>📥</span> 양식 다운로드
+          <button type="button" class="btn btn-outline" id="btnDownloadContactTemplate" title="인맥 등록용 샘플 엑셀(XLSX) 양식을 내려받습니다">
+            <span>📥</span> 양식 다운(XLSX)
           </button>
-          <button type="button" class="btn btn-primary" id="btnUploadContactCSV" title="엑셀(CSV) 파일로 지인 명단을 대량 등록합니다">
+          <button type="button" class="btn btn-primary" id="btnUploadContactExcel" title="엑셀(XLSX) 파일로 지인 명단을 대량 등록합니다">
             <span>📤</span> 인맥 대량 업로드
           </button>
-          <input type="file" id="csvContactInput" accept=".csv" style="display: none;" />
+          <input type="file" id="excelContactInput" accept=".xlsx,.xls,.csv" style="display: none;" />
         </div>
       </div>
 
@@ -505,7 +508,7 @@
 
     <!-- 하단 푸터 및 이스터에그 (Skill 2) -->
     <footer class="app-footer">
-      <div>© 2026 기부태익 (期赴泰益) - 경조사 수지 장부 | 로컬 퍼스트 무서버 아키텍처</div>
+      <div>© 2026 기부태익 (期赴泰益) v1.00 - 경조사 수지 장부 | 로컬 퍼스트 무서버 아키텍처</div>
       <div>
         <span id="secretEasterEgg" class="footer-easter-egg" title="System Quick Auth">💮</span>
         <span style="margin-left: 6px; font-family: var(--font-serif); font-size: 11px;">K-Traditional Modern</span>
@@ -696,6 +699,7 @@
   <script src="js/confetti.js"></script>
   <script src="js/modal.js"></script>
   <script src="js/qrcode.min.js"></script>
+  <script src="js/xlsx.full.min.js"></script>
   <script src="js/app.js"></script>
 
 </body>
