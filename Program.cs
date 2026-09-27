@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
+using System.Reflection;
 using System.Threading;
 
 namespace GiveAndTake
@@ -14,6 +15,7 @@ namespace GiveAndTake
         private static DateTime _lastHeartbeat = DateTime.Now;
         private static DateTime _startTime = DateTime.Now;
         private static string _baseDir;
+        private static readonly Assembly _assembly = Assembly.GetExecutingAssembly();
         private static readonly ManualResetEvent _exitEvent = new ManualResetEvent(false);
 
         [STAThread]
@@ -172,6 +174,47 @@ namespace GiveAndTake
             }
         }
 
+        private static string GetStorageFilePath(bool forWriting)
+        {
+            // 1순위: 포터블 모드 (실행 파일 옆 data 폴더)
+            try
+            {
+                string localDataDir = Path.Combine(_baseDir, "data");
+                if (forWriting && !Directory.Exists(localDataDir))
+                {
+                    Directory.CreateDirectory(localDataDir);
+                }
+                string localFile = Path.Combine(localDataDir, "gnt_ledger_store.json");
+                if (File.Exists(localFile) || forWriting)
+                {
+                    // 쓰기 테스트
+                    if (forWriting)
+                    {
+                        string testFile = Path.Combine(localDataDir, ".test_write");
+                        File.WriteAllText(testFile, "ok");
+                        File.Delete(testFile);
+                    }
+                    return localFile;
+                }
+            }
+            catch { }
+
+            // 2순위: AppData 경로 (단일 실행 파일이 바탕화면이나 쓰기 제한 폴더에 있을 때)
+            try
+            {
+                string appDataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "GiveAndTake", "data");
+                if (forWriting && !Directory.Exists(appDataDir))
+                {
+                    Directory.CreateDirectory(appDataDir);
+                }
+                return Path.Combine(appDataDir, "gnt_ledger_store.json");
+            }
+            catch
+            {
+                return Path.Combine(_baseDir, "gnt_ledger_store.json");
+            }
+        }
+
         private static void ProcessRequest(object state)
         {
             HttpListenerContext ctx = (HttpListenerContext)state;
@@ -192,13 +235,10 @@ namespace GiveAndTake
                     return;
                 }
 
-                // 2. 로컬 디스크 파일 영구 저장 API (POST)
+                // 2. 로컬 영구 저장 API (POST)
                 if (rawUrl.Equals("api/save", StringComparison.OrdinalIgnoreCase))
                 {
-                    string dataDir = Path.Combine(_baseDir, "data");
-                    if (!Directory.Exists(dataDir)) Directory.CreateDirectory(dataDir);
-                    string savePath = Path.Combine(dataDir, "gnt_ledger_store.json");
-
+                    string savePath = GetStorageFilePath(true);
                     using (StreamReader sr = new StreamReader(ctx.Request.InputStream, System.Text.Encoding.UTF8))
                     {
                         string body = sr.ReadToEnd();
@@ -216,11 +256,22 @@ namespace GiveAndTake
                     return;
                 }
 
-                // 3. 로컬 디스크 파일 복원 로드 API (GET)
+                // 3. 로컬 파일 복원 로드 API (GET)
                 if (rawUrl.Equals("api/load", StringComparison.OrdinalIgnoreCase))
                 {
-                    string savePath = Path.Combine(_baseDir, "data", "gnt_ledger_store.json");
+                    string savePath = GetStorageFilePath(false);
                     string jsonContent = File.Exists(savePath) ? File.ReadAllText(savePath, System.Text.Encoding.UTF8) : "{}";
+                    
+                    // 만약 포터블 위치에 없으면 AppData 위치도 확인
+                    if (jsonContent == "{}" || string.IsNullOrEmpty(jsonContent))
+                    {
+                        string appDataPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "GiveAndTake", "data", "gnt_ledger_store.json");
+                        if (File.Exists(appDataPath))
+                        {
+                            jsonContent = File.ReadAllText(appDataPath, System.Text.Encoding.UTF8);
+                        }
+                    }
+
                     byte[] dataBytes = System.Text.Encoding.UTF8.GetBytes(jsonContent);
                     ctx.Response.ContentType = "application/json; charset=utf-8";
                     ctx.Response.ContentLength64 = dataBytes.Length;
@@ -229,19 +280,56 @@ namespace GiveAndTake
                     return;
                 }
 
-                string filePath = Path.Combine(_baseDir, rawUrl.Replace('/', Path.DirectorySeparatorChar));
+                // 4. 정적 리소스 서빙 (임베디드 리소스 우선, 디스크 파일 폴백)
+                string cleanUrl = Uri.UnescapeDataString(rawUrl).TrimStart('/');
+                string resName = "web." + cleanUrl.Replace('/', '.');
 
-                if (File.Exists(filePath))
+                Stream stream = _assembly.GetManifestResourceStream(resName);
+                if (stream == null)
                 {
-                    byte[] fileBytes = File.ReadAllBytes(filePath);
-                    ctx.Response.ContentType = GetContentType(filePath);
-                    ctx.Response.ContentLength64 = fileBytes.Length;
-                    ctx.Response.StatusCode = (int)HttpStatusCode.OK;
-                    ctx.Response.OutputStream.Write(fileBytes, 0, fileBytes.Length);
+                    string searchLower = resName.ToLowerInvariant();
+                    foreach (string name in _assembly.GetManifestResourceNames())
+                    {
+                        if (name.ToLowerInvariant() == searchLower)
+                        {
+                            stream = _assembly.GetManifestResourceStream(name);
+                            break;
+                        }
+                    }
+                }
+
+                if (stream != null)
+                {
+                    using (stream)
+                    {
+                        ctx.Response.ContentType = GetContentType(cleanUrl);
+                        ctx.Response.ContentLength64 = stream.Length;
+                        ctx.Response.StatusCode = (int)HttpStatusCode.OK;
+
+                        byte[] buffer = new byte[16384];
+                        int bytesRead;
+                        while ((bytesRead = stream.Read(buffer, 0, buffer.Length)) > 0)
+                        {
+                            ctx.Response.OutputStream.Write(buffer, 0, bytesRead);
+                        }
+                    }
                 }
                 else
                 {
-                    ctx.Response.StatusCode = (int)HttpStatusCode.NotFound;
+                    // 폴백: 로컬 디스크 파일
+                    string filePath = Path.Combine(_baseDir, cleanUrl.Replace('/', Path.DirectorySeparatorChar));
+                    if (File.Exists(filePath))
+                    {
+                        byte[] fileBytes = File.ReadAllBytes(filePath);
+                        ctx.Response.ContentType = GetContentType(filePath);
+                        ctx.Response.ContentLength64 = fileBytes.Length;
+                        ctx.Response.StatusCode = (int)HttpStatusCode.OK;
+                        ctx.Response.OutputStream.Write(fileBytes, 0, fileBytes.Length);
+                    }
+                    else
+                    {
+                        ctx.Response.StatusCode = (int)HttpStatusCode.NotFound;
+                    }
                 }
             }
             catch
